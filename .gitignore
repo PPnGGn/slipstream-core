@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+._*
+
+# Мобильные артефакты сборки (gomobile)
+*.aar
+*.framework
+
+# Go
+/bin/
+/dist/
+/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
