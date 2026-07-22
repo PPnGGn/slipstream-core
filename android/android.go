@@ -1,5 +1,12 @@
+// Package android is the gomobile-bound entry point for the Android app.
+// gomobile binds exactly one package (see the Makefile bind-android target).
+//
+// Android is the fd path: VpnService.Builder().establish() hands the app an
+// honest TUN file descriptor, so Start takes an fd and drives the fd-based
+// tun2socks engine. iOS/macOS have no fd and use their own packages.
+//
 // https://pkg.go.dev/golang.org/x/mobile/cmd/gobind.
-package mobile
+package android
 
 import (
 	v2core "v2net-core/core"
