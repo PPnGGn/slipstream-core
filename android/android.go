@@ -9,6 +9,8 @@
 package android
 
 import (
+	"fmt"
+
 	v2core "v2net-core/core"
 )
 
@@ -34,7 +36,12 @@ func SetHandler(h Handler) {
 	v2core.SetLogHandler(handlerAdapter{h: h})
 }
 
-func Start(configJson string, fd int, socksPort int) error {
+func Start(configJson string, fd int, socksPort int) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("android.Start: panic recovered: %v", r)
+		}
+	}()
 	if err := v2core.StartXray(configJson); err != nil {
 		return err
 	}

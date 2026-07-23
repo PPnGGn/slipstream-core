@@ -1,12 +1,12 @@
 package core
 
 import (
-	"strings"
-	"sync"
 	tunlog "github.com/xjasonlyu/tun2socks/v2/log"
 	xraylog "github.com/xtls/xray-core/common/log"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"strings"
+	"sync"
 )
 
 type LogHandler interface {
@@ -32,6 +32,9 @@ func emitLog(level, message, source string) {
 		h.OnLog(level, message, source)
 	}
 }
+
+func LogInfo(message, source string)  { emitLog("info", message, source) }
+func LogError(message, source string) { emitLog("error", message, source) }
 
 func InstallLogForwarding() {
 	xraylog.RegisterHandler(&xrayLogForwarder{})

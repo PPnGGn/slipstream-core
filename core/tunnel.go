@@ -11,19 +11,12 @@ import (
 	"io"
 	"net/url"
 	"sync"
+	"time"
 )
 
-// defaultMTU matches the MTU the platform tun (NEPacketTunnelFlow / utun) is
-// configured with. 1500 is the safe default for the packet-flow path.
 const defaultMTU = 1500
 
 // --- fd-based path (Android) -------------------------------------------------
-//
-// StartTun drives tun2socks from a raw TUN file descriptor. This is the path
-// used on Android, where VpnService.Builder().establish() hands us an honest
-// fd. Apple platforms (iOS 15+/macOS) never expose that fd, so they use
-// StartTunIO below instead.
-
 func StartTun(fd int, socksPort int) error {
 	engine.Insert(&engine.Key{
 		Proxy:    fmt.Sprintf("socks5://127.0.0.1:%d", socksPort),
@@ -42,17 +35,6 @@ func StopTun() {
 }
 
 // --- io-based path (iOS / macOS) ---------------------------------------------
-//
-// StartTunIO drives the same tun2socks/gvisor stack from a plain io.ReadWriter
-// instead of an fd. On Apple platforms the NEPacketTunnelProvider gives us a
-// NEPacketTunnelFlow (packet read/write), not a TUN fd, so the Swift side wraps
-// that flow into an io.ReadWriter and passes it here. This is the
-// Apple-supported path (no private "socket.fileDescriptor" KVC trick) and is
-// how Go-based iOS VPN clients (e.g. Outline) work.
-//
-// Whole IP packets are exchanged over rw: each Read must return exactly one IP
-// packet, each Write is handed exactly one IP packet — matching how
-// NEPacketTunnelFlow's readPacketObjects/writePacketObjects behave.
 
 type ioTunnel struct {
 	endpoint *iobased.Endpoint
@@ -111,8 +93,24 @@ func StopTunIO() {
 	if ioActive == nil {
 		return
 	}
-	ioActive.stack.Close()
-	ioActive.stack.Wait()
-	ioActive.endpoint.Close()
+	active := ioActive
 	ioActive = nil
+
+	active.stack.Close()
+	active.endpoint.Close()
+	waitWithTimeout(active.endpoint.Wait, 2*time.Second)
+	waitWithTimeout(active.stack.Wait, 2*time.Second)
+}
+
+func waitWithTimeout(wait func(), timeout time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		LogError("StopTunIO: wait timed out; read side likely still blocked", "iobridge")
+	}
 }
