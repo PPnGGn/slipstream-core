@@ -4,17 +4,26 @@ import (
 	"fmt"
 	t2score "github.com/xjasonlyu/tun2socks/v2/core"
 	"github.com/xjasonlyu/tun2socks/v2/core/device/iobased"
+	"github.com/xjasonlyu/tun2socks/v2/core/option"
 	"github.com/xjasonlyu/tun2socks/v2/engine"
 	"github.com/xjasonlyu/tun2socks/v2/proxy"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
 	"net/url"
+	"runtime/debug"
 	"sync"
 	"time"
 )
 
 const defaultMTU = 1500
+
+// default buffer sizes for TCP endpoints
+const (
+	tcpBufferMin     = 4 << 10
+	tcpBufferDefault = 256 << 10
+	tcpBufferMax     = 1 << 20
+)
 
 // --- fd-based path (Android) -------------------------------------------------
 func StartTun(fd int, socksPort int) error {
@@ -73,6 +82,10 @@ func StartTunIO(rw io.ReadWriter, socksPort int) error {
 	st, err := t2score.CreateStack(&t2score.Config{
 		LinkEndpoint:     ep,
 		TransportHandler: tunnel.T(),
+		Options: []option.Option{
+			option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+			option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+		},
 	})
 	if err != nil {
 		ep.Close()
@@ -113,4 +126,8 @@ func waitWithTimeout(wait func(), timeout time.Duration) {
 	case <-time.After(timeout):
 		LogError("StopTunIO: wait timed out; read side likely still blocked", "iobridge")
 	}
+}
+
+func FreeMemory() {
+	debug.FreeOSMemory()
 }

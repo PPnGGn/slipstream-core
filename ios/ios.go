@@ -3,10 +3,12 @@ package ios
 import (
 	"fmt"
 	"io"
+	"runtime/debug"
 	v2core "v2net-core/core"
 )
 
 func init() {
+	debug.SetGCPercent(20)
 	v2core.InstallLogForwarding()
 }
 
@@ -86,4 +88,8 @@ type TrafficStats struct {
 func QueryTraffic() *TrafficStats {
 	up, down := v2core.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
+}
+
+func FreeMemory() {
+	v2core.FreeMemory()
 }
