@@ -11,11 +11,11 @@ package android
 import (
 	"fmt"
 
-	v2core "v2net-core/core"
+	slipcore "slipstream-core/core"
 )
 
 func init() {
-	v2core.InstallLogForwarding()
+	slipcore.InstallLogForwarding()
 }
 
 type Handler interface {
@@ -30,10 +30,10 @@ func (a handlerAdapter) OnLog(level, message, source string) {
 
 func SetHandler(h Handler) {
 	if h == nil {
-		v2core.SetLogHandler(nil)
+		slipcore.SetLogHandler(nil)
 		return
 	}
-	v2core.SetLogHandler(handlerAdapter{h: h})
+	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
 func Start(configJson string, fd int, socksPort int) (err error) {
@@ -42,19 +42,19 @@ func Start(configJson string, fd int, socksPort int) (err error) {
 			err = fmt.Errorf("android.Start: panic recovered: %v", r)
 		}
 	}()
-	if err := v2core.StartXray(configJson); err != nil {
+	if err := slipcore.StartXray(configJson); err != nil {
 		return err
 	}
-	if err := v2core.StartTun(fd, socksPort); err != nil {
-		_ = v2core.StopXray()
+	if err := slipcore.StartTun(fd, socksPort); err != nil {
+		_ = slipcore.StopXray()
 		return err
 	}
 	return nil
 }
 
 func Stop() error {
-	v2core.StopTun()
-	return v2core.StopXray()
+	slipcore.StopTun()
+	return slipcore.StopXray()
 }
 
 type TrafficStats struct {
@@ -63,6 +63,6 @@ type TrafficStats struct {
 }
 
 func QueryTraffic() *TrafficStats {
-	up, down := v2core.QueryTraffic()
+	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
 }

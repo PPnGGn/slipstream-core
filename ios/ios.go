@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
-	v2core "v2net-core/core"
+	slipcore "slipstream-core/core"
 )
 
 func init() {
 	debug.SetGCPercent(20)
-	v2core.InstallLogForwarding()
+	slipcore.InstallLogForwarding()
 }
 
 type Handler interface {
@@ -24,10 +24,10 @@ func (a handlerAdapter) OnLog(level, message, source string) {
 
 func SetHandler(h Handler) {
 	if h == nil {
-		v2core.SetLogHandler(nil)
+		slipcore.SetLogHandler(nil)
 		return
 	}
-	v2core.SetLogHandler(handlerAdapter{h: h})
+	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
 type PacketFlow interface {
@@ -65,19 +65,19 @@ func Start(configJson string, flow PacketFlow, socksPort int) (err error) {
 			err = fmt.Errorf("ios.Start: panic recovered: %v", r)
 		}
 	}()
-	if err := v2core.StartXray(configJson); err != nil {
+	if err := slipcore.StartXray(configJson); err != nil {
 		return err
 	}
-	if err := v2core.StartTunIO(packetFlowRW{flow: flow}, socksPort); err != nil {
-		_ = v2core.StopXray()
+	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}, socksPort); err != nil {
+		_ = slipcore.StopXray()
 		return err
 	}
 	return nil
 }
 
 func Stop() error {
-	v2core.StopTunIO()
-	return v2core.StopXray()
+	slipcore.StopTunIO()
+	return slipcore.StopXray()
 }
 
 type TrafficStats struct {
@@ -86,10 +86,10 @@ type TrafficStats struct {
 }
 
 func QueryTraffic() *TrafficStats {
-	up, down := v2core.QueryTraffic()
+	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
 }
 
 func FreeMemory() {
-	v2core.FreeMemory()
+	slipcore.FreeMemory()
 }

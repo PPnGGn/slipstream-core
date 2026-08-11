@@ -1,4 +1,4 @@
-module v2net-core
+module slipstream-core
 
 go 1.26.4
 

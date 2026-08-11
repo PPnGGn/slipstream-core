@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"os"
 
-	v2core "v2net-core/core"
+	slipcore "slipstream-core/core"
 )
 
 func main() {
-	fmt.Println("v2net-core desktop entry point is not implemented yet.")
-	_ = v2core.OutboundTag
+	fmt.Println("slipstream-core desktop entry point is not implemented yet.")
+	_ = slipcore.OutboundTag
 	os.Exit(1)
 }

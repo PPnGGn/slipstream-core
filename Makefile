@@ -7,16 +7,16 @@
 # Requires: Go, `gomobile init` (golang.org/x/mobile/cmd/gomobile + gobind, see
 # go.mod's `tool` directive), Android NDK for android, Xcode for ios/mac.
 
-AAR_OUT := ../v2net/android/app/libs/v2netcore.aar
-IOS_XCFRAMEWORK_OUT := v2netcore-ios.xcframework
-MAC_XCFRAMEWORK_OUT := v2netcore-mac.xcframework
+AAR_OUT := ../slipstream/android/app/libs/slipstreamcore.aar
+IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
+MAC_XCFRAMEWORK_OUT := slipstreamcore-mac.xcframework
 
 .PHONY: bind bind-android bind-ios bind-mac build vet tidy
 
 bind: bind-android bind-ios bind-mac
 
 bind-android:
-	gomobile bind -target=android -androidapi 21 -javapkg com.v2net -o $(AAR_OUT) ./android
+	gomobile bind -target=android -androidapi 21 -javapkg com.slipstream -o $(AAR_OUT) ./android
 
 # iOS device + simulator slices.
 # Works around a gomobile bug: the Info.plist it writes into each slice's
