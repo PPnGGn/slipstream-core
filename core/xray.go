@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/xtls/xray-core/core"
@@ -17,7 +18,15 @@ var (
 	xrayInst *core.Instance
 )
 
-func StartXray(configJson string) error {
+// StartXray builds and starts xray-core from configJson.
+//
+// assetDir, if non-empty, is where xray looks for geosite.dat / geoip.dat when
+// the config references geosite:/geoip: categories. It is exported as the
+// xray.location.asset env flag (both the dotted and XRAY_LOCATION_ASSET spellings
+// are set — some libc reject env names with dots). GetAssetLocation re-reads the
+// env on every asset open and is not cached, so setting it here, before Build(),
+// is enough. Empty assetDir leaves xray's default (the executable's directory).
+func StartXray(configJson string, assetDir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -25,14 +34,9 @@ func StartXray(configJson string) error {
 		return fmt.Errorf("xray is already running")
 	}
 
-	pbConfig, err := serial.DecodeJSONConfig(bytes.NewReader([]byte(configJson)))
+	coreConfig, err := buildCoreConfig(configJson, assetDir)
 	if err != nil {
-		return fmt.Errorf("failed to decode config: %w", err)
-	}
-
-	coreConfig, err := pbConfig.Build()
-	if err != nil {
-		return fmt.Errorf("failed to build core config: %w", err)
+		return err
 	}
 
 	inst, err := core.New(coreConfig)
@@ -48,6 +52,29 @@ func StartXray(configJson string) error {
 
 	xrayInst = inst
 	return nil
+}
+
+// buildCoreConfig points xray at assetDir (for geosite.dat / geoip.dat) and
+// turns configJson into a built *core.Config. Geo databases are read here, at
+// Build() time — a config that names a geosite:/geoip: category with no data
+// file present fails at this step, before anything starts.
+func buildCoreConfig(configJson string, assetDir string) (*core.Config, error) {
+	if assetDir != "" {
+		_ = os.Setenv("xray.location.asset", assetDir)
+		_ = os.Setenv("XRAY_LOCATION_ASSET", assetDir)
+	}
+
+	pbConfig, err := serial.DecodeJSONConfig(bytes.NewReader([]byte(configJson)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode config: %w", err)
+	}
+
+	coreConfig, err := pbConfig.Build()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build core config: %w", err)
+	}
+
+	return coreConfig, nil
 }
 
 func StopXray() error {
