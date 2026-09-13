@@ -77,6 +77,11 @@ func buildCoreConfig(configJson string, assetDir string) (*core.Config, error) {
 	return coreConfig, nil
 }
 
+// XrayVersion returns the embedded xray-core version, e.g. "26.9.9".
+func XrayVersion() string {
+	return core.Version()
+}
+
 func StopXray() error {
 	mu.Lock()
 	defer mu.Unlock()

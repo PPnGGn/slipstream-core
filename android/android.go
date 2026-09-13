@@ -57,6 +57,11 @@ func Stop() error {
 	return slipcore.StopXray()
 }
 
+// Version returns the embedded xray-core version, e.g. "26.9.9".
+func Version() string {
+	return slipcore.XrayVersion()
+}
+
 type TrafficStats struct {
 	UplinkBytes   int64
 	DownlinkBytes int64
