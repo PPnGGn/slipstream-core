@@ -11,6 +11,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
 	"net/url"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -130,4 +131,21 @@ func waitWithTimeout(wait func(), timeout time.Duration) {
 
 func FreeMemory() {
 	debug.FreeOSMemory()
+}
+
+// QueryMemory reports this Go runtime's own memory footprint: xray-core and
+// tun2socks's allocations, isolated from the surrounding host process (the
+// Flutter engine + Skia on Android; the NetworkExtension framework on iOS,
+// which already runs the tunnel in its own process regardless).
+//
+// sysBytes ("Sys" in runtime.MemStats) is total memory obtained from the OS
+// for the Go runtime — heap, goroutine stacks, GC bookkeeping. It only grows
+// (Go rarely hands pages back), so it tracks a live footprint far more
+// steadily than heapAllocBytes, which saws up and down every GC cycle.
+// heapAllocBytes ("HeapAlloc") is included alongside it for anyone who wants
+// the live-objects reading instead.
+func QueryMemory() (heapAllocBytes int64, sysBytes int64) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return int64(m.HeapAlloc), int64(m.Sys)
 }

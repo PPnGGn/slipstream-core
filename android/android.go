@@ -71,3 +71,16 @@ func QueryTraffic() *TrafficStats {
 	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
 }
+
+// MemoryStats is xray-core/tun2socks's own memory footprint — the Go
+// runtime's, isolated from the surrounding Flutter/Android process. See
+// slipcore.QueryMemory for what each field means.
+type MemoryStats struct {
+	HeapAllocBytes int64
+	SysBytes       int64
+}
+
+func QueryMemory() *MemoryStats {
+	heapAlloc, sys := slipcore.QueryMemory()
+	return &MemoryStats{HeapAllocBytes: heapAlloc, SysBytes: sys}
+}
