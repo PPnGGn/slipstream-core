@@ -55,7 +55,9 @@ func newTun2socksForwardingLogger() *zap.Logger {
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.TimeKey = ""
 	return zap.New(&tun2socksForwardCore{
-		LevelEnabler: zapcore.InfoLevel,
+		// Only filter once this logger replaces engine's own (engine.Key.LogLevel
+		// no longer applies); the sole filter on the iOS/macOS path. Keep >= warn.
+		LevelEnabler: zapcore.WarnLevel,
 		encoder:      zapcore.NewConsoleEncoder(encoderCfg),
 	})
 }

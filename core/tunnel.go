@@ -31,7 +31,9 @@ func StartTun(fd int, socksPort int) error {
 	engine.Insert(&engine.Key{
 		Proxy:    fmt.Sprintf("socks5://127.0.0.1:%d", socksPort),
 		Device:   fmt.Sprintf("fd://%d", fd),
-		LogLevel: "info",
+		// Not "info": engine logs "[STACK] device <-> proxy" with the full proxy URL,
+		// which will carry the SOCKS password.
+		LogLevel: "warn",
 	})
 	engine.Start()
 
