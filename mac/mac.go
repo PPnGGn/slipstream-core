@@ -82,14 +82,14 @@ func (p packetFlowRW) Write(b []byte) (int, error) {
 }
 
 // Start brings up xray-core (the SOCKS proxy half) from configJson, then starts
-// the tun2socks netstack bridged to the given PacketFlow. socksPort must match
-// the inbound SOCKS port in configJson. assetDir is where xray looks for
-// geosite.dat / geoip.dat (see core.StartXray); "" leaves the default.
-func Start(configJson string, flow PacketFlow, socksPort int, assetDir string) error {
+// the tun2socks netstack bridged to the given PacketFlow. The SOCKS port and
+// credentials are chosen by the core (see core.StartXray). assetDir is where
+// xray looks for geosite.dat / geoip.dat; "" leaves the default.
+func Start(configJson string, flow PacketFlow, assetDir string) error {
 	if err := slipcore.StartXray(configJson, assetDir); err != nil {
 		return err
 	}
-	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}, socksPort); err != nil {
+	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}); err != nil {
 		_ = slipcore.StopXray()
 		return err
 	}

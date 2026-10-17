@@ -10,7 +10,6 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/tunnel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
-	"net/url"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -27,9 +26,14 @@ const (
 )
 
 // --- fd-based path (Android) -------------------------------------------------
-func StartTun(fd int, socksPort int) error {
+func StartTun(fd int) error {
+	p, ok := activeProxyParams()
+	if !ok {
+		return fmt.Errorf("start tun: xray is not running")
+	}
+
 	engine.Insert(&engine.Key{
-		Proxy:    fmt.Sprintf("socks5://127.0.0.1:%d", socksPort),
+		Proxy:    socksProxyURL(p).String(),
 		Device:   fmt.Sprintf("fd://%d", fd),
 		// Not "info": engine logs "[STACK] device <-> proxy" with the full proxy URL,
 		// which will carry the SOCKS password.
@@ -58,7 +62,7 @@ var (
 	ioActive *ioTunnel
 )
 
-func StartTunIO(rw io.ReadWriter, socksPort int) error {
+func StartTunIO(rw io.ReadWriter) error {
 	ioMu.Lock()
 	defer ioMu.Unlock()
 
@@ -66,11 +70,11 @@ func StartTunIO(rw io.ReadWriter, socksPort int) error {
 		return fmt.Errorf("tun2socks is already running")
 	}
 
-	u, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
-	if err != nil {
-		return fmt.Errorf("failed to parse proxy url: %w", err)
+	p, ok := activeProxyParams()
+	if !ok {
+		return fmt.Errorf("start tun: xray is not running")
 	}
-	px, err := proxy.Parse(u)
+	px, err := proxy.Parse(socksProxyURL(p))
 	if err != nil {
 		return fmt.Errorf("failed to build socks proxy: %w", err)
 	}

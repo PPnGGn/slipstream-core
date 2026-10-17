@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
+	"strconv"
+	"sync"
 )
 
 // freePort asks the OS for a free TCP port on loopback and returns its number.
@@ -171,4 +174,48 @@ func hardenConfig(configJson string, p proxyParams) (string, error) {
 		return "", fmt.Errorf("harden config: encode: %w", err)
 	}
 	return string(out), nil
+}
+
+var (
+	proxyMu     sync.Mutex
+	activeProxy *proxyParams // nil while no tunnel is running
+)
+
+// setActiveProxy remembers the parameters of the running tunnel session.
+func setActiveProxy(p proxyParams) {
+	proxyMu.Lock()
+	defer proxyMu.Unlock()
+	activeProxy = &p
+}
+
+// clearActiveProxy forgets them when the tunnel stops, so the password does
+// not outlive its session.
+func clearActiveProxy() {
+	proxyMu.Lock()
+	defer proxyMu.Unlock()
+	activeProxy = nil
+}
+
+// activeProxyParams returns a copy of the current parameters, or false when no
+// tunnel session is active.
+func activeProxyParams() (proxyParams, bool) {
+	proxyMu.Lock()
+	defer proxyMu.Unlock()
+	if activeProxy == nil {
+		return proxyParams{}, false
+	}
+	return *activeProxy, true
+}
+
+// socksProxyURL is the address tun2socks dials to reach the local SOCKS
+// inbound: socks5://user:pass@127.0.0.1:port.
+//
+// Built with url.URL rather than Sprintf so credentials are escaped correctly.
+// Never log the String() of this value; use Redacted() if you must.
+func socksProxyURL(p proxyParams) *url.URL {
+	return &url.URL{
+		Scheme: "socks5",
+		User:   url.UserPassword(p.user, p.pass),
+		Host:   net.JoinHostPort(loopbackHost, strconv.Itoa(p.socksPort)),
+	}
 }

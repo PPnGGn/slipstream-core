@@ -4,8 +4,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net"
+	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -254,5 +256,56 @@ func TestHardenConfigBuilds(t *testing.T) {
 	// xray itself must accept the result (no geo refs, so no asset dir needed).
 	if _, err := buildCoreConfig(out, ""); err != nil {
 		t.Fatalf("buildCoreConfig rejected the hardened config: %v", err)
+	}
+}
+
+func TestActiveProxy(t *testing.T) {
+	t.Cleanup(clearActiveProxy) // do not leak state into other tests
+
+	clearActiveProxy()
+	if _, ok := activeProxyParams(); ok {
+		t.Fatalf("activeProxyParams() reported a session before any was set")
+	}
+
+	want := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	setActiveProxy(want)
+	got, ok := activeProxyParams()
+	if !ok || got != want {
+		t.Fatalf("activeProxyParams() = %+v, %v; want %+v, true", got, ok, want)
+	}
+
+	// The caller gets a copy: changing it must not touch the stored value.
+	got.pass = "changed"
+	again, _ := activeProxyParams()
+	if again.pass != "p" {
+		t.Errorf("stored password was modified through the returned copy")
+	}
+
+	clearActiveProxy()
+	if _, ok := activeProxyParams(); ok {
+		t.Errorf("activeProxyParams() still reports a session after clearActiveProxy()")
+	}
+}
+
+func TestSocksProxyURL(t *testing.T) {
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	if got, want := socksProxyURL(p).String(), "socks5://u:p@127.0.0.1:1111"; got != want {
+		t.Errorf("socksProxyURL = %q, want %q", got, want)
+	}
+
+	// Characters that would corrupt a hand-built URL must survive a round trip.
+	p.pass = "p@ss:/?#"
+	parsed, err := url.Parse(socksProxyURL(p).String())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if pass, _ := parsed.User.Password(); pass != p.pass {
+		t.Errorf("password after round trip = %q, want %q", pass, p.pass)
+	}
+	if parsed.Host != "127.0.0.1:1111" {
+		t.Errorf("host = %q", parsed.Host)
+	}
+	if strings.Contains(socksProxyURL(p).Redacted(), p.pass) {
+		t.Errorf("Redacted() leaks the password")
 	}
 }

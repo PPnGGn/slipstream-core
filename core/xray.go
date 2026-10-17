@@ -34,7 +34,18 @@ func StartXray(configJson string, assetDir string) error {
 		return fmt.Errorf("xray is already running")
 	}
 
-	coreConfig, err := buildCoreConfig(configJson, assetDir)
+	// Fresh ports and credentials for every session; the config's own inbounds
+	// are replaced so nothing listens without a password.
+	params, err := newProxyParams()
+	if err != nil {
+		return err
+	}
+	hardened, err := hardenConfig(configJson, params)
+	if err != nil {
+		return err
+	}
+
+	coreConfig, err := buildCoreConfig(hardened, assetDir)
 	if err != nil {
 		return err
 	}
@@ -45,12 +56,17 @@ func StartXray(configJson string, assetDir string) error {
 	}
 
 	if err := inst.Start(); err != nil {
+		// Start stops at the first failing feature and leaves the earlier ones
+		// running (e.g. the SOCKS listener when the HTTP port is taken).
+		_ = inst.Close()
 		return fmt.Errorf("failed to start xray: %w", err)
 	}
 
 	InstallLogForwarding()
 
 	xrayInst = inst
+	// Published only once xray is really up: StartTun reads it next.
+	setActiveProxy(params)
 	return nil
 }
 
@@ -85,6 +101,9 @@ func XrayVersion() string {
 func StopXray() error {
 	mu.Lock()
 	defer mu.Unlock()
+
+	// Unconditional: the credentials must never outlive the session.
+	clearActiveProxy()
 
 	if xrayInst == nil {
 		return nil

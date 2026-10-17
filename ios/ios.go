@@ -59,7 +59,7 @@ func (p packetFlowRW) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func Start(configJson string, flow PacketFlow, socksPort int, assetDir string) (err error) {
+func Start(configJson string, flow PacketFlow, assetDir string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("ios.Start: panic recovered: %v", r)
@@ -68,7 +68,7 @@ func Start(configJson string, flow PacketFlow, socksPort int, assetDir string) (
 	if err := slipcore.StartXray(configJson, assetDir); err != nil {
 		return err
 	}
-	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}, socksPort); err != nil {
+	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}); err != nil {
 		_ = slipcore.StopXray()
 		return err
 	}

@@ -36,7 +36,7 @@ func SetHandler(h Handler) {
 	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
-func Start(configJson string, fd int, socksPort int, assetDir string) (err error) {
+func Start(configJson string, fd int, assetDir string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("android.Start: panic recovered: %v", r)
@@ -45,7 +45,7 @@ func Start(configJson string, fd int, socksPort int, assetDir string) (err error
 	if err := slipcore.StartXray(configJson, assetDir); err != nil {
 		return err
 	}
-	if err := slipcore.StartTun(fd, socksPort); err != nil {
+	if err := slipcore.StartTun(fd); err != nil {
 		_ = slipcore.StopXray()
 		return err
 	}
