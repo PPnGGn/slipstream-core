@@ -84,3 +84,23 @@ func QueryMemory() *MemoryStats {
 	heapAlloc, sys := slipcore.QueryMemory()
 	return &MemoryStats{HeapAllocBytes: heapAlloc, SysBytes: sys}
 }
+
+// LocalProxy is the loopback HTTP proxy of the running session.
+type LocalProxy struct {
+	Port int
+	User string
+	Pass string
+}
+
+// LocalHTTPProxy returns the HTTP proxy the app should use for its own
+// requests while the tunnel is up, or nil when it is down. The app is excluded
+// from the tunnel, so this is its only way through it.
+//
+// Never log the result: it carries the proxy password.
+func LocalHTTPProxy() *LocalProxy {
+	port, user, pass, ok := slipcore.ActiveHTTPProxy()
+	if !ok {
+		return nil
+	}
+	return &LocalProxy{Port: port, User: user, Pass: pass}
+}

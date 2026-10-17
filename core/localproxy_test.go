@@ -309,3 +309,18 @@ func TestSocksProxyURL(t *testing.T) {
 		t.Errorf("Redacted() leaks the password")
 	}
 }
+
+func TestActiveHTTPProxy(t *testing.T) {
+	t.Cleanup(clearActiveProxy)
+
+	clearActiveProxy()
+	if _, _, _, ok := ActiveHTTPProxy(); ok {
+		t.Fatalf("ActiveHTTPProxy() reported a proxy with no session")
+	}
+
+	setActiveProxy(proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"})
+	port, user, pass, ok := ActiveHTTPProxy()
+	if !ok || port != 2222 || user != "u" || pass != "p" {
+		t.Errorf("ActiveHTTPProxy() = %d, %q, %q, %v; want the http port and credentials", port, user, pass, ok)
+	}
+}

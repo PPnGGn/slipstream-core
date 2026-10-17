@@ -219,3 +219,16 @@ func socksProxyURL(p proxyParams) *url.URL {
 		Host:   net.JoinHostPort(loopbackHost, strconv.Itoa(p.socksPort)),
 	}
 }
+
+// ActiveHTTPProxy reports the loopback HTTP proxy of the running session, so
+// the app can send its own requests (geo downloads) through the tunnel it is
+// excluded from. ok is false when no session is active.
+//
+// The SOCKS side is deliberately not exposed: only tun2socks needs it.
+func ActiveHTTPProxy() (port int, user, pass string, ok bool) {
+	p, ok := activeProxyParams()
+	if !ok {
+		return 0, "", "", false
+	}
+	return p.httpPort, p.user, p.pass, true
+}
