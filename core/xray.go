@@ -40,7 +40,7 @@ func StartXray(configJson string, assetDir string) error {
 	if err != nil {
 		return err
 	}
-	hardened, err := hardenConfig(configJson, params)
+	hardened, err := hardenConfig(configJson, params, verboseLogs.Load())
 	if err != nil {
 		return err
 	}

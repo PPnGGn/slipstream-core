@@ -36,6 +36,13 @@ func SetHandler(h Handler) {
 	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
+// SetVerboseLogs turns on info-level core logs (xray access + DNS log,
+// tun2socks connections) from the next Start. Debug builds only: the app
+// passes its own debuggable flag, so release builds never call it with true.
+func SetVerboseLogs(on bool) {
+	slipcore.SetVerboseLogs(on)
+}
+
 func Start(configJson string, fd int, assetDir string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

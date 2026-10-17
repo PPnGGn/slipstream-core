@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap/zapcore"
 )
 
 func TestFreePort(t *testing.T) {
@@ -193,7 +195,7 @@ const hardenSample = `{
 func TestHardenConfig(t *testing.T) {
 	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
 
-	out, err := hardenConfig(hardenSample, p)
+	out, err := hardenConfig(hardenSample, p, false)
 	if err != nil {
 		t.Fatalf("hardenConfig error: %v", err)
 	}
@@ -238,7 +240,7 @@ func TestHardenConfig(t *testing.T) {
 func TestHardenConfigInvalidInput(t *testing.T) {
 	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
 	for _, in := range []string{"", "not json", "[]", "null", `"text"`} {
-		if out, err := hardenConfig(in, p); err == nil {
+		if out, err := hardenConfig(in, p, false); err == nil {
 			t.Errorf("hardenConfig(%q) = %q, want an error", in, out)
 		}
 	}
@@ -249,7 +251,7 @@ func TestHardenConfigBuilds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newProxyParams: %v", err)
 	}
-	out, err := hardenConfig(hardenSample, p)
+	out, err := hardenConfig(hardenSample, p, false)
 	if err != nil {
 		t.Fatalf("hardenConfig: %v", err)
 	}
@@ -322,5 +324,51 @@ func TestActiveHTTPProxy(t *testing.T) {
 	port, user, pass, ok := ActiveHTTPProxy()
 	if !ok || port != 2222 || user != "u" || pass != "p" {
 		t.Errorf("ActiveHTTPProxy() = %d, %q, %q, %v; want the http port and credentials", port, user, pass, ok)
+	}
+}
+
+func TestHardenConfigVerboseLog(t *testing.T) {
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	for _, c := range []struct {
+		verbose   bool
+		level     string
+		accessOff bool
+	}{
+		{verbose: false, level: "warning", accessOff: true},
+		{verbose: true, level: "info", accessOff: false},
+	} {
+		out, err := hardenConfig(hardenSample, p, c.verbose)
+		if err != nil {
+			t.Fatalf("verbose=%v: %v", c.verbose, err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal([]byte(out), &cfg); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		logCfg := cfg["log"].(map[string]any)
+		if logCfg["loglevel"] != c.level {
+			t.Errorf("verbose=%v: loglevel = %v, want %s", c.verbose, logCfg["loglevel"], c.level)
+		}
+		if got := logCfg["access"] == "none"; got != c.accessOff {
+			t.Errorf("verbose=%v: access log off = %v, want %v", c.verbose, got, c.accessOff)
+		}
+		// Both variants must still build: a typo in a log key fails here.
+		if _, err := buildCoreConfig(out, ""); err != nil {
+			t.Errorf("verbose=%v: build: %v", c.verbose, err)
+		}
+	}
+}
+
+func TestTun2socksForwarderLevel(t *testing.T) {
+	t.Cleanup(func() { SetVerboseLogs(false) })
+
+	SetVerboseLogs(false)
+	if newTun2socksForwardingLogger().Core().Enabled(zapcore.InfoLevel) {
+		t.Errorf("release: info logs from tun2socks are let through")
+	}
+
+	SetVerboseLogs(true)
+	if !newTun2socksForwardingLogger().Core().Enabled(zapcore.InfoLevel) {
+		t.Errorf("debug: info logs from tun2socks are dropped")
 	}
 }

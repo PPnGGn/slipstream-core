@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type LogHandler interface {
@@ -36,28 +37,62 @@ func emitLog(level, message, source string) {
 func LogInfo(message, source string)  { emitLog("info", message, source) }
 func LogError(message, source string) { emitLog("error", message, source) }
 
+// verboseLogs raises xray and tun2socks to info for debug builds. The app sets
+// it before Start from its own debuggable flag, so a release build can't turn
+// it on. Even then engine's start-up logger stays at warn (see StartTun): its
+// "[STACK]" line would print the proxy password.
+var verboseLogs atomic.Bool
+
+// SetVerboseLogs takes effect on the next Start.
+func SetVerboseLogs(on bool) { verboseLogs.Store(on) }
+
 func InstallLogForwarding() {
 	xraylog.RegisterHandler(&xrayLogForwarder{})
 	tunlog.SetLogger(newTun2socksForwardingLogger())
 }
 
+// xrayLogForwarder replaces xray's own log handler, and with it the severity
+// filter app/log applies from the config's "log" block (RegisterHandler
+// discards the previous handler). So the filtering has to happen here, or
+// every Debug line and every access/DNS record reaches the app.
 type xrayLogForwarder struct{}
 
 func (*xrayLogForwarder) Handle(msg xraylog.Message) {
+	verbose := verboseLogs.Load()
 	level := "info"
 	if gm, ok := msg.(*xraylog.GeneralMessage); ok {
+		if !keepXraySeverity(gm.Severity, verbose) {
+			return
+		}
 		level = strings.ToLower(gm.Severity.String())
+	} else if !verbose {
+		return // access and DNS records: who went where, debug builds only
 	}
 	emitLog(level, msg.String(), "xray")
+}
+
+// keepXraySeverity: Warning and above always, Info too in debug builds, Debug
+// never (it is per-packet noise). Lower Severity values are more severe.
+func keepXraySeverity(s xraylog.Severity, verbose bool) bool {
+	limit := xraylog.Severity_Warning
+	if verbose {
+		limit = xraylog.Severity_Info
+	}
+	return s <= limit
 }
 
 func newTun2socksForwardingLogger() *zap.Logger {
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.TimeKey = ""
+	// Only filter once this logger replaces engine's own (engine.Key.LogLevel
+	// no longer applies); the sole filter on the iOS/macOS path. Keep >= warn
+	// outside debug builds.
+	level := zapcore.WarnLevel
+	if verboseLogs.Load() {
+		level = zapcore.InfoLevel
+	}
 	return zap.New(&tun2socksForwardCore{
-		// Only filter once this logger replaces engine's own (engine.Key.LogLevel
-		// no longer applies); the sole filter on the iOS/macOS path. Keep >= warn.
-		LevelEnabler: zapcore.WarnLevel,
+		LevelEnabler: level,
 		encoder:      zapcore.NewConsoleEncoder(encoderCfg),
 	})
 }
