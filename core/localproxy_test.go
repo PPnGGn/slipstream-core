@@ -2,7 +2,9 @@ package core
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"net"
+	"reflect"
 	"strconv"
 	"testing"
 )
@@ -81,5 +83,176 @@ func TestRandHexInvalidLength(t *testing.T) {
 		if got, err := randHex(n); err == nil {
 			t.Errorf("randHex(%d) = %q, want an error", n, got)
 		}
+	}
+}
+
+func TestNewProxyParams(t *testing.T) {
+	p, err := newProxyParams()
+	if err != nil {
+		t.Fatalf("newProxyParams() error: %v", err)
+	}
+	if p.socksPort == p.httpPort {
+		t.Errorf("socks and http share port %d", p.socksPort)
+	}
+	if p.socksPort < 1 || p.httpPort < 1 {
+		t.Errorf("invalid ports: socks=%d http=%d", p.socksPort, p.httpPort)
+	}
+	if len(p.user) != 16 || len(p.pass) != 32 {
+		t.Errorf("credential lengths: user=%d pass=%d, want 16 and 32", len(p.user), len(p.pass))
+	}
+
+	other, err := newProxyParams()
+	if err != nil {
+		t.Fatalf("newProxyParams() error: %v", err)
+	}
+	if p.pass == other.pass {
+		t.Errorf("two sessions got the same password")
+	}
+}
+
+func TestLocalInbounds(t *testing.T) {
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+
+	// Round-trip through JSON: this is what xray will actually see, and it
+	// turns every number into float64.
+	raw, err := json.Marshal(localInbounds(p))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d inbounds, want 2", len(got))
+	}
+
+	socks, httpIn := got[0], got[1]
+	for _, c := range []struct {
+		name string
+		in   map[string]any
+		tag  string
+		port float64
+	}{
+		{"socks", socks, "socks", 1111},
+		{"http", httpIn, "http", 2222},
+	} {
+		if c.in["tag"] != c.tag || c.in["protocol"] != c.tag {
+			t.Errorf("%s: tag/protocol = %v/%v", c.name, c.in["tag"], c.in["protocol"])
+		}
+		if c.in["listen"] != "127.0.0.1" {
+			t.Errorf("%s: listen = %v, want 127.0.0.1", c.name, c.in["listen"])
+		}
+		if c.in["port"] != c.port {
+			t.Errorf("%s: port = %v, want %v", c.name, c.in["port"], c.port)
+		}
+
+		settings, ok := c.in["settings"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: settings is not an object", c.name)
+		}
+		accounts, ok := settings["accounts"].([]any)
+		if !ok || len(accounts) != 1 {
+			t.Fatalf("%s: accounts = %v, want one entry", c.name, settings["accounts"])
+		}
+		acc, _ := accounts[0].(map[string]any)
+		if acc["user"] != "u" || acc["pass"] != "p" {
+			t.Errorf("%s: account = %v", c.name, acc)
+		}
+	}
+
+	socksSettings := socks["settings"].(map[string]any)
+	if socksSettings["auth"] != "password" || socksSettings["udp"] != true {
+		t.Errorf("socks settings = %v", socksSettings)
+	}
+	sniffing := socks["sniffing"].(map[string]any)
+	if sniffing["enabled"] != true || sniffing["routeOnly"] != true {
+		t.Errorf("socks sniffing = %v", sniffing)
+	}
+}
+
+// hardenSample is a provider-like config: its own inbounds (open, no auth),
+// a verbose log, a private-IP outbound (see geoConfig in xray_test.go) and
+// fields hardenConfig must not touch.
+const hardenSample = `{
+	"log": {"loglevel": "debug"},
+	"inbounds": [
+		{"listen": "0.0.0.0", "port": 10808, "protocol": "socks", "tag": "old-socks", "settings": {"auth": "noauth"}}
+	],
+	"outbounds": [
+		{"protocol": "vless", "settings": {"vnext": [{"address": "10.0.0.1", "port": 443, "users": [{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}]}]}, "streamSettings": {"network": "tcp", "security": "none"}, "tag": "proxy"},
+		{"protocol": "freedom", "tag": "direct"}
+	],
+	"routing": {"rules": [{"type": "field", "inboundTag": ["socks"], "outboundTag": "direct"}]},
+	"dns": {"servers": ["1.1.1.1"]},
+	"remarks": "keep me"
+}`
+
+func TestHardenConfig(t *testing.T) {
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+
+	out, err := hardenConfig(hardenSample, p)
+	if err != nil {
+		t.Fatalf("hardenConfig error: %v", err)
+	}
+
+	var before, after map[string]any
+	if err := json.Unmarshal([]byte(hardenSample), &before); err != nil {
+		t.Fatalf("decode sample: %v", err)
+	}
+	if err := json.Unmarshal([]byte(out), &after); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+
+	// Untouched fields are deeply equal to the input.
+	for _, key := range []string{"outbounds", "routing", "dns", "remarks"} {
+		if !reflect.DeepEqual(before[key], after[key]) {
+			t.Errorf("%q changed:\n before: %v\n after:  %v", key, before[key], after[key])
+		}
+	}
+
+	// Old inbounds are gone, ours are in.
+	inbounds, ok := after["inbounds"].([]any)
+	if !ok || len(inbounds) != 2 {
+		t.Fatalf("inbounds = %v, want exactly 2", after["inbounds"])
+	}
+	for _, in := range inbounds {
+		m := in.(map[string]any)
+		if m["listen"] != "127.0.0.1" {
+			t.Errorf("inbound %v listens on %v", m["tag"], m["listen"])
+		}
+		if m["tag"] == "old-socks" {
+			t.Errorf("old inbound survived")
+		}
+	}
+
+	// Log is replaced.
+	logCfg := after["log"].(map[string]any)
+	if logCfg["loglevel"] != "warning" || logCfg["access"] != "none" {
+		t.Errorf("log = %v", logCfg)
+	}
+}
+
+func TestHardenConfigInvalidInput(t *testing.T) {
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	for _, in := range []string{"", "not json", "[]", "null", `"text"`} {
+		if out, err := hardenConfig(in, p); err == nil {
+			t.Errorf("hardenConfig(%q) = %q, want an error", in, out)
+		}
+	}
+}
+
+func TestHardenConfigBuilds(t *testing.T) {
+	p, err := newProxyParams()
+	if err != nil {
+		t.Fatalf("newProxyParams: %v", err)
+	}
+	out, err := hardenConfig(hardenSample, p)
+	if err != nil {
+		t.Fatalf("hardenConfig: %v", err)
+	}
+	// xray itself must accept the result (no geo refs, so no asset dir needed).
+	if _, err := buildCoreConfig(out, ""); err != nil {
+		t.Fatalf("buildCoreConfig rejected the hardened config: %v", err)
 	}
 }
