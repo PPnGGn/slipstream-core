@@ -63,7 +63,14 @@ func Start(configJson string, fd int, assetDir string) (err error) {
 func Stop() error {
 	slipcore.StopMemoryLog()
 	slipcore.StopTun()
-	return slipcore.StopXray()
+	err := slipcore.StopXray()
+	// The stopped session is garbage now. Left alone it waits for the next GC
+	// and then goes back to the OS bit by bit — minutes under light traffic,
+	// so after a switch the monitor kept showing the previous, heavier session.
+	// In a goroutine: the app calls Stop on its main thread, and a full GC on
+	// a slow phone must not freeze the UI.
+	go slipcore.FreeMemory()
+	return err
 }
 
 // Version returns the embedded xray-core version, e.g. "26.9.9".
@@ -101,6 +108,12 @@ type MemoryStats struct {
 func QueryMemory() *MemoryStats {
 	m := MemoryStats(slipcore.ReadMemorySnapshot())
 	return &m
+}
+
+// FreeMemory runs a GC and hands every free page back to the OS, in the
+// background: the app calls it from onTrimMemory, on its main thread.
+func FreeMemory() {
+	go slipcore.FreeMemory()
 }
 
 // WriteHeapProfile writes the core's heap profile into dir (the app's
