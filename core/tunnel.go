@@ -50,7 +50,7 @@ func StopTun() {
 	engine.Stop()
 }
 
-// --- io-based path (iOS / macOS) ---------------------------------------------
+// --- io-based path (iOS) -----------------------------------------------------
 
 type ioTunnel struct {
 	endpoint *iobased.Endpoint

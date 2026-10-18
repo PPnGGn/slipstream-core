@@ -1,11 +1,11 @@
 # Rebuilds the gomobile bindings. There is now one bound package per OS
-# (./android, ./ios, ./mac) instead of a single shared ./mobile, because each
+# (./android, ./ios) instead of a single shared ./mobile, because each
 # platform's tunnel entry differs: Android drives tun2socks from a real TUN fd,
-# while iOS/macOS have no fd and bridge NEPacketTunnelFlow through an
+# while iOS has no fd and bridges NEPacketTunnelFlow through an
 # io.ReadWriter (see core/tunnel.go). ./desktop is a stub, not bound.
 #
 # Requires: Go, `gomobile init` (golang.org/x/mobile/cmd/gomobile + gobind, see
-# go.mod's `tool` directive), Android NDK for android, Xcode for ios/mac.
+# go.mod's `tool` directive), Android NDK for android, Xcode for ios.
 #
 # LDFLAGS: xray-core's NAT-traversal stack pulls github.com/wlynxg/anet, which
 # uses //go:linkname against net.zoneCache. Go >= 1.23 rejects that at link time
@@ -14,12 +14,11 @@
 
 AAR_OUT := ../slipstream/android/app/libs/slipstreamcore.aar
 IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
-MAC_XCFRAMEWORK_OUT := slipstreamcore-mac.xcframework
 LDFLAGS := -checklinkname=0
 
-.PHONY: bind bind-android bind-ios bind-mac build vet tidy check-xray-pin
+.PHONY: bind bind-android bind-ios build vet tidy check-xray-pin
 
-bind: bind-android bind-ios bind-mac
+bind: bind-android bind-ios
 
 bind-android:
 	gomobile bind -ldflags="$(LDFLAGS)" -target=android -androidapi 21 -javapkg com.slipstream -o $(AAR_OUT) ./android
@@ -34,16 +33,6 @@ bind-ios:
 	gomobile bind -ldflags="$(LDFLAGS)" -target=ios -o $(IOS_XCFRAMEWORK_OUT) ./ios
 	@for plist in $(IOS_XCFRAMEWORK_OUT)/*/*.framework/Info.plist; do \
 		plutil -replace MinimumOSVersion -string "15.0" "$$plist"; \
-	done
-
-# macOS slice. gomobile emits a macos-arm64(_x86_64) slice for -target=macos.
-# Same MinimumOSVersion=100.0 bug as bind-ios (see comment above); macOS
-# .frameworks are versioned bundles, so the Info.plist lives one level deeper
-# under Versions/A/Resources.
-bind-mac:
-	gomobile bind -ldflags="$(LDFLAGS)" -target=macos -o $(MAC_XCFRAMEWORK_OUT) ./mac
-	@for plist in $(MAC_XCFRAMEWORK_OUT)/*/*.framework/Versions/A/Resources/Info.plist; do \
-		plutil -replace MinimumOSVersion -string "13.0" "$$plist"; \
 	done
 
 build:

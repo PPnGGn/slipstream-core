@@ -3,7 +3,7 @@
 //
 // Android is the fd path: VpnService.Builder().establish() hands the app an
 // honest TUN file descriptor, so Start takes an fd and drives the fd-based
-// tun2socks engine. iOS/macOS have no fd and use their own packages.
+// tun2socks engine. iOS has no fd and uses its own package.
 //
 // https://pkg.go.dev/golang.org/x/mobile/cmd/gobind.
 package android
