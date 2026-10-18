@@ -56,10 +56,12 @@ func Start(configJson string, fd int, assetDir string) (err error) {
 		_ = slipcore.StopXray()
 		return err
 	}
+	slipcore.StartMemoryLog() // debug builds only
 	return nil
 }
 
 func Stop() error {
+	slipcore.StopMemoryLog()
 	slipcore.StopTun()
 	return slipcore.StopXray()
 }
@@ -99,6 +101,13 @@ type MemoryStats struct {
 func QueryMemory() *MemoryStats {
 	m := MemoryStats(slipcore.ReadMemorySnapshot())
 	return &m
+}
+
+// WriteHeapProfile writes the core's heap profile into dir (the app's
+// filesDir) as heap[-name].pprof and returns the path. Debug builds only: the
+// app wires it to an adb broadcast, see V2RayVpnService.
+func WriteHeapProfile(dir string, name string) (string, error) {
+	return slipcore.WriteHeapProfile(dir, name)
 }
 
 // LocalProxy is the loopback HTTP proxy of the running session.
