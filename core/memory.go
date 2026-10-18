@@ -11,6 +11,11 @@ const (
 	metricStacks      = "/memory/classes/heap/stacks:bytes"
 	metricGoroutines  = "/sched/goroutines:goroutines"
 	metricGCCycles    = "/gc/cycles/total:gc-cycles"
+	metricGOGC        = "/gc/gogc:percent"
+	metricMemoryLimit = "/gc/gomemlimit:bytes"
+
+	metricGCCPU   = "/cpu/classes/gc/total:cpu-seconds"
+	metricUserCPU = "/cpu/classes/user:cpu-seconds"
 )
 
 // memoryMetricNames is every metric snapshotFromMetrics reads.
@@ -22,6 +27,8 @@ var memoryMetricNames = []string{
 	metricStacks,
 	metricGoroutines,
 	metricGCCycles,
+	metricGOGC,
+	metricMemoryLimit,
 }
 
 // MemorySnapshot is one reading of this Go runtime's memory: xray-core and
@@ -42,6 +49,10 @@ type MemorySnapshot struct {
 	Goroutines int64
 	// GCCycles counts finished GC cycles since the process started.
 	GCCycles int64
+	// GCPercent and MemoryLimitBytes are the GC settings in force (GOGC and
+	// GOMEMLIMIT; math.MaxInt64 means no limit), see SetGCTuning.
+	GCPercent        int64
+	MemoryLimitBytes int64
 }
 
 // snapshotFromMetrics turns metric name -> value into a snapshot. Pure, so
@@ -61,6 +72,9 @@ func snapshotFromMetrics(m map[string]uint64) MemorySnapshot {
 		StackBytes:     int64(m[metricStacks]),
 		Goroutines:     int64(m[metricGoroutines]),
 		GCCycles:       int64(m[metricGCCycles]),
+
+		GCPercent:        int64(m[metricGOGC]),
+		MemoryLimitBytes: int64(m[metricMemoryLimit]),
 	}
 }
 
@@ -83,4 +97,26 @@ func ReadMemorySnapshot() MemorySnapshot {
 		}
 	}
 	return snapshotFromMetrics(values)
+}
+
+// CPUTimes is CPU time this Go runtime has spent since the process started:
+// GCSeconds by the garbage collector, UserSeconds by everything else Go runs
+// (xray, tun2socks). How fast GCSeconds grows against UserSeconds is what GC
+// tuning costs. The runtime refreshes both only when a GC cycle ends, so they
+// move in steps; compare them over windows of minutes, not seconds.
+type CPUTimes struct {
+	GCSeconds   float64
+	UserSeconds float64
+}
+
+func ReadCPUTimes() CPUTimes {
+	samples := []metrics.Sample{{Name: metricGCCPU}, {Name: metricUserCPU}}
+	metrics.Read(samples)
+	read := func(s metrics.Sample) float64 {
+		if s.Value.Kind() != metrics.KindFloat64 {
+			return 0 // unknown name: see TestMemoryMetricNamesSupported
+		}
+		return s.Value.Float64()
+	}
+	return CPUTimes{GCSeconds: read(samples[0]), UserSeconds: read(samples[1])}
 }

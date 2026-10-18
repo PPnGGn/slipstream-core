@@ -3,16 +3,23 @@ package core
 import (
 	"fmt"
 	"log"
+	"math"
 	"sync"
 	"time"
 )
 
 // formatMemoryLine renders a snapshot for the debug log, in MB (1024²) with
-// one decimal: enough to see a trend, short enough for a logcat line.
-func formatMemoryLine(s MemorySnapshot) string {
-	return fmt.Sprintf("mem: retained=%.1fMB total=%.1fMB heap=%.1fMB stacks=%.1fMB goroutines=%d gc=%d",
+// one decimal: enough to see a trend, short enough for a logcat line. The CPU
+// times are cumulative; their growth between two lines is what counts.
+func formatMemoryLine(s MemorySnapshot, c CPUTimes) string {
+	limit := "none"
+	if s.MemoryLimitBytes != math.MaxInt64 {
+		limit = fmt.Sprintf("%.0fMB", mb(s.MemoryLimitBytes))
+	}
+	return fmt.Sprintf("mem: retained=%.1fMB total=%.1fMB heap=%.1fMB stacks=%.1fMB goroutines=%d gc=%d"+
+		" cpu=%.1fs gccpu=%.2fs gogc=%d limit=%s",
 		mb(s.RetainedBytes), mb(s.TotalBytes), mb(s.HeapInuseBytes), mb(s.StackBytes),
-		s.Goroutines, s.GCCycles)
+		s.Goroutines, s.GCCycles, c.UserSeconds, c.GCSeconds, s.GCPercent, limit)
 }
 
 func mb(bytes int64) float64 { return float64(bytes) / (1 << 20) }
@@ -35,7 +42,9 @@ func StartMemoryLog() {
 	if memLog != nil || !verboseLogs.Load() {
 		return
 	}
-	memLog = startLoop(3*time.Second, func() { log.Print(formatMemoryLine(ReadMemorySnapshot())) })
+	memLog = startLoop(3*time.Second, func() {
+		log.Print(formatMemoryLine(ReadMemorySnapshot(), ReadCPUTimes()))
+	})
 }
 
 // StopMemoryLog stops the log; safe to call when none is running.

@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"math"
+	"strings"
+	"testing"
+)
 
 func TestFormatMemoryLine(t *testing.T) {
 	got := formatMemoryLine(MemorySnapshot{
@@ -10,10 +14,20 @@ func TestFormatMemoryLine(t *testing.T) {
 		StackBytes:     3 << 19, // 1.5 MB
 		Goroutines:     57,
 		GCCycles:       12,
-	})
-	want := "mem: retained=70.0MB total=100.0MB heap=45.0MB stacks=1.5MB goroutines=57 gc=12"
+		GCPercent:        100,
+		MemoryLimitBytes: math.MaxInt64, // Go's "no limit"
+	}, CPUTimes{GCSeconds: 1.25, UserSeconds: 30.5})
+	want := "mem: retained=70.0MB total=100.0MB heap=45.0MB stacks=1.5MB goroutines=57 gc=12" +
+		" cpu=30.5s gccpu=1.25s gogc=100 limit=none"
 	if got != want {
 		t.Errorf("formatMemoryLine() =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatMemoryLineWithLimit(t *testing.T) {
+	got := formatMemoryLine(MemorySnapshot{GCPercent: 50, MemoryLimitBytes: 80 << 20}, CPUTimes{})
+	if want := " gogc=50 limit=80MB"; !strings.HasSuffix(got, want) {
+		t.Errorf("formatMemoryLine() = %q, want suffix %q", got, want)
 	}
 }
 

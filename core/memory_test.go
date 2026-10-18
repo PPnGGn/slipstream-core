@@ -15,15 +15,19 @@ func TestSnapshotFromMetrics(t *testing.T) {
 		metricStacks:      2 << 20,
 		metricGoroutines:  57,
 		metricGCCycles:    12,
+		metricGOGC:        50,
+		metricMemoryLimit: 80 << 20,
 	})
 	want := MemorySnapshot{
-		TotalBytes:     100 << 20,
-		ReleasedBytes:  30 << 20,
-		RetainedBytes:  70 << 20, // total - released: what the OS still charges us
-		HeapInuseBytes: 45 << 20, // live objects + free slots in their spans
-		StackBytes:     2 << 20,
-		Goroutines:     57,
-		GCCycles:       12,
+		TotalBytes:       100 << 20,
+		ReleasedBytes:    30 << 20,
+		RetainedBytes:    70 << 20, // total - released: what the OS still charges us
+		HeapInuseBytes:   45 << 20, // live objects + free slots in their spans
+		StackBytes:       2 << 20,
+		Goroutines:       57,
+		GCCycles:         12,
+		GCPercent:        50,
+		MemoryLimitBytes: 80 << 20,
 	}
 	if got != want {
 		t.Errorf("snapshotFromMetrics() =\n%+v\nwant\n%+v", got, want)
@@ -46,15 +50,37 @@ func TestMemoryMetricNamesSupported(t *testing.T) {
 	for _, d := range metrics.All() {
 		known[d.Name] = d.Kind
 	}
-	for _, name := range memoryMetricNames {
-		kind, ok := known[name]
-		if !ok {
-			t.Errorf("%s: unknown to this Go runtime", name)
-			continue
+	check := func(names []string, want metrics.ValueKind) {
+		for _, name := range names {
+			kind, ok := known[name]
+			if !ok {
+				t.Errorf("%s: unknown to this Go runtime", name)
+				continue
+			}
+			if kind != want {
+				t.Errorf("%s: kind %v, want %v", name, kind, want)
+			}
 		}
-		if kind != metrics.KindUint64 {
-			t.Errorf("%s: kind %v, want KindUint64", name, kind)
-		}
+	}
+	check(memoryMetricNames, metrics.KindUint64)
+	check([]string{metricGCCPU, metricUserCPU}, metrics.KindFloat64)
+}
+
+func TestReadCPUTimesLive(t *testing.T) {
+	// Some Go work, then a GC: the runtime only updates CPU stats when a GC ends.
+	sink := 0
+	for i := range 50_000_000 {
+		sink += i
+	}
+	_ = sink
+	runtime.GC()
+
+	c := ReadCPUTimes()
+	if c.GCSeconds <= 0 {
+		t.Errorf("GCSeconds = %v, want > 0 after runtime.GC()", c.GCSeconds)
+	}
+	if c.UserSeconds <= 0 {
+		t.Errorf("UserSeconds = %v, want > 0 after a busy loop", c.UserSeconds)
 	}
 }
 

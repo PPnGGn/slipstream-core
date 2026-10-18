@@ -1,6 +1,7 @@
 package android
 
 import (
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -21,6 +22,16 @@ func TestQueryMemory(t *testing.T) {
 	}
 	if m.Goroutines < 1 {
 		t.Errorf("Goroutines = %d, want >= 1", m.Goroutines)
+	}
+}
+
+func TestLoadingTunesGC(t *testing.T) {
+	s := slipcore.ReadMemorySnapshot()
+	if s.GCPercent != 25 {
+		t.Errorf("gogc = %d after the package loaded, want 25", s.GCPercent)
+	}
+	if s.MemoryLimitBytes != math.MaxInt64 {
+		t.Errorf("memory limit = %d, want none", s.MemoryLimitBytes)
 	}
 }
 
