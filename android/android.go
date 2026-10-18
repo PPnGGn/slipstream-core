@@ -63,11 +63,13 @@ func Start(configJson string, fd int, assetDir string) (err error) {
 		return err
 	}
 	slipcore.StartMemoryLog() // debug builds only
+	slipcore.StartMemoryReturn()
 	return nil
 }
 
 func Stop() error {
 	slipcore.StopMemoryLog()
+	slipcore.StopMemoryReturn()
 	slipcore.StopTun()
 	err := slipcore.StopXray()
 	// The stopped session is garbage now. Left alone it waits for the next GC
