@@ -35,6 +35,22 @@ func TestLoadingTunesGC(t *testing.T) {
 	}
 }
 
+func TestStopKeepsMemoryLog(t *testing.T) {
+	slipcore.SetVerboseLogs(true) // debug build
+	SetMemoryLog(true)
+	t.Cleanup(func() {
+		SetMemoryLog(false)
+		slipcore.SetVerboseLogs(false)
+	})
+
+	if err := Stop(); err != nil {
+		t.Fatalf("Stop() error: %v", err)
+	}
+	if !slipcore.MemoryLogRunning() {
+		t.Error("Stop turned the memory log off; it must keep logging across server switches")
+	}
+}
+
 // makeGarbage leaves n bytes the runtime took from the OS and nobody uses —
 // what a stopped session becomes.
 func makeGarbage(n int) {

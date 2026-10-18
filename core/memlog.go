@@ -47,6 +47,25 @@ func StartMemoryLog() {
 	})
 }
 
+// SetMemoryLog turns the memory log on or off. It is off by default — a line
+// every 3 s floods logcat — and not tied to a session, so once on it keeps
+// logging across server switches. Turning it on is a no-op unless
+// SetVerboseLogs(true) (debug builds).
+func SetMemoryLog(on bool) {
+	if on {
+		StartMemoryLog()
+	} else {
+		StopMemoryLog()
+	}
+}
+
+// MemoryLogRunning reports whether the memory log is on.
+func MemoryLogRunning() bool {
+	memLogMu.Lock()
+	defer memLogMu.Unlock()
+	return memLog != nil
+}
+
 // StopMemoryLog stops the log; safe to call when none is running.
 func StopMemoryLog() {
 	memLogMu.Lock()

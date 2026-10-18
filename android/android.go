@@ -62,13 +62,11 @@ func Start(configJson string, fd int, assetDir string) (err error) {
 		_ = slipcore.StopXray()
 		return err
 	}
-	slipcore.StartMemoryLog() // debug builds only
 	slipcore.StartMemoryReturn()
 	return nil
 }
 
 func Stop() error {
-	slipcore.StopMemoryLog()
 	slipcore.StopMemoryReturn()
 	slipcore.StopTun()
 	err := slipcore.StopXray()
@@ -125,6 +123,13 @@ func QueryMemory() *MemoryStats {
 // background: the app calls it from onTrimMemory, on its main thread.
 func FreeMemory() {
 	go slipcore.FreeMemory()
+}
+
+// SetMemoryLog turns the "mem:" logcat line (every 3 s) on or off. Off by
+// default; debug builds switch it from an adb broadcast for a measurement,
+// see V2RayVpnService. Survives Stop, so a log spans server switches.
+func SetMemoryLog(on bool) {
+	slipcore.SetMemoryLog(on)
 }
 
 // SetGCTuning changes the GC settings at once: percent is GOGC (> 0), limitMB

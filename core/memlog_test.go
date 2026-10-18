@@ -31,6 +31,23 @@ func TestFormatMemoryLineWithLimit(t *testing.T) {
 	}
 }
 
+func TestSetMemoryLog(t *testing.T) {
+	t.Cleanup(func() {
+		SetMemoryLog(false)
+		SetVerboseLogs(false)
+	})
+	SetVerboseLogs(true) // debug build
+
+	SetMemoryLog(true)
+	if !MemoryLogRunning() {
+		t.Fatal("SetMemoryLog(true): log not running")
+	}
+	SetMemoryLog(false)
+	if MemoryLogRunning() {
+		t.Error("SetMemoryLog(false): log still running")
+	}
+}
+
 func TestStartMemoryLogOnlyInDebugBuilds(t *testing.T) {
 	t.Cleanup(func() {
 		StopMemoryLog()
