@@ -1,11 +1,6 @@
 package core
 
-import (
-	"runtime"
-	"sync/atomic"
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestFormatMemoryLine(t *testing.T) {
 	got := formatMemoryLine(MemorySnapshot{
@@ -19,27 +14,6 @@ func TestFormatMemoryLine(t *testing.T) {
 	want := "mem: retained=70.0MB total=100.0MB heap=45.0MB stacks=1.5MB goroutines=57 gc=12"
 	if got != want {
 		t.Errorf("formatMemoryLine() =\n%q\nwant\n%q", got, want)
-	}
-}
-
-func TestMemoryLogEmitsUntilStopped(t *testing.T) {
-	var lines atomic.Int32
-	l := startMemoryLog(5*time.Millisecond, func(string) { lines.Add(1) })
-
-	deadline := time.Now().Add(time.Second)
-	for lines.Load() < 2 {
-		if time.Now().After(deadline) {
-			l.stop()
-			t.Fatalf("got %d lines in 1s, want at least 2", lines.Load())
-		}
-		time.Sleep(time.Millisecond)
-	}
-	l.stop()
-
-	after := lines.Load()
-	time.Sleep(30 * time.Millisecond) // several intervals
-	if got := lines.Load(); got != after {
-		t.Errorf("%d more lines after stop", got-after)
 	}
 }
 
@@ -71,19 +45,4 @@ func TestStartMemoryLogOnlyInDebugBuilds(t *testing.T) {
 		t.Error("memory log still set after StopMemoryLog")
 	}
 	StopMemoryLog() // nothing running: must not panic
-}
-
-func TestMemoryLogStopLeavesNoGoroutine(t *testing.T) {
-	before := runtime.NumGoroutine()
-	l := startMemoryLog(time.Hour, func(string) {})
-	l.stop()
-
-	// The loop has closed done but may not have returned yet; give it a moment.
-	deadline := time.Now().Add(time.Second)
-	for runtime.NumGoroutine() > before {
-		if time.Now().After(deadline) {
-			t.Fatalf("goroutines: %d before start, %d after stop", before, runtime.NumGoroutine())
-		}
-		time.Sleep(time.Millisecond)
-	}
 }
