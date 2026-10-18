@@ -8,6 +8,7 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/engine"
 	"github.com/xjasonlyu/tun2socks/v2/proxy"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel"
+	"github.com/xjasonlyu/tun2socks/v2/tunnel/statistic"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
 	"runtime/debug"
@@ -47,6 +48,18 @@ func StartTun(fd int) error {
 
 func StopTun() {
 	engine.Stop()
+	closeRelayedConns()
+}
+
+// closeRelayedConns closes every connection tun2socks still relays. Stopping
+// the device and stack does not end them, and each keeps its SOCKS connection
+// to the stopped xray open — and through it the whole old instance:
+// dispatcher, router, geo matchers (~35 MB on a geo config). A keep-alive
+// connection can hold that for minutes after a server switch.
+func closeRelayedConns() {
+	for _, c := range statistic.DefaultManager.Snapshot().Connections {
+		_ = c.Close()
+	}
 }
 
 // --- io-based path (iOS) -----------------------------------------------------
@@ -119,6 +132,7 @@ func StopTunIO() {
 	active.endpoint.Close()
 	waitWithTimeout(active.endpoint.Wait, 2*time.Second)
 	waitWithTimeout(active.stack.Wait, 2*time.Second)
+	closeRelayedConns()
 }
 
 func waitWithTimeout(wait func(), timeout time.Duration) {

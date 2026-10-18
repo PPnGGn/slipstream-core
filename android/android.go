@@ -123,6 +123,13 @@ func WriteHeapProfile(dir string, name string) (string, error) {
 	return slipcore.WriteHeapProfile(dir, name)
 }
 
+// WriteGoroutineDump writes every goroutine's stack into dir (the app's
+// filesDir) as goroutines[-name].txt and returns the path. Debug builds only,
+// on the same adb broadcast as WriteHeapProfile.
+func WriteGoroutineDump(dir string, name string) (string, error) {
+	return slipcore.WriteGoroutineDump(dir, name)
+}
+
 // LocalProxy is the loopback HTTP proxy of the running session.
 type LocalProxy struct {
 	Port int
