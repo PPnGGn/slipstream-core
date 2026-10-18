@@ -81,15 +81,24 @@ func QueryTraffic() *TrafficStats {
 
 // MemoryStats is xray-core/tun2socks's own memory footprint — the Go
 // runtime's, isolated from the surrounding Flutter/Android process. See
-// slipcore.QueryMemory for what each field means.
+// slipcore.MemorySnapshot for what each field means.
+//
+// gomobile binds only this package's types, hence the copy. Fields must match
+// MemorySnapshot exactly (names, types, order): QueryMemory converts one into
+// the other, so any drift stops the build instead of silently zeroing a field.
 type MemoryStats struct {
-	HeapAllocBytes int64
-	SysBytes       int64
+	TotalBytes     int64
+	ReleasedBytes  int64
+	RetainedBytes  int64
+	HeapInuseBytes int64
+	StackBytes     int64
+	Goroutines     int64
+	GCCycles       int64
 }
 
 func QueryMemory() *MemoryStats {
-	heapAlloc, sys := slipcore.QueryMemory()
-	return &MemoryStats{HeapAllocBytes: heapAlloc, SysBytes: sys}
+	m := MemoryStats(slipcore.ReadMemorySnapshot())
+	return &m
 }
 
 // LocalProxy is the loopback HTTP proxy of the running session.
