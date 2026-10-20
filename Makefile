@@ -49,10 +49,12 @@ tidy:
 # If the two go.mod files drift, slipstream-rules' geocheck still passes (it
 # validates against its own pin) while the app hits a parse error at connect
 # time. This asserts the pins match; run it in CI / before a release.
-# Expects ../slipstream-rules checked out next to this repo.
+# Expects the slipstream-rules repo checked out next to this one; the local
+# folder is named slipstream-georules, override with RULES_DIR=... if yours differs.
+RULES_DIR ?= ../slipstream-georules
 check-xray-pin:
 	@here=$$(grep -E '^\s+github.com/xtls/xray-core ' go.mod | awk '{print $$2}'); \
-	there=$$(grep -E '^\s+github.com/xtls/xray-core ' ../slipstream-rules/go.mod | awk '{print $$2}'); \
+	there=$$(grep -E '^\s+github.com/xtls/xray-core ' $(RULES_DIR)/go.mod | awk '{print $$2}'); \
 	if [ -z "$$here" ] || [ -z "$$there" ]; then \
 		echo "check-xray-pin: could not read the xray-core pin from one of the go.mod files"; exit 1; \
 	fi; \
