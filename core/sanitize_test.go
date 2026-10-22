@@ -10,6 +10,8 @@ import (
 	"time"
 
 	xcore "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/vless"
+	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
 )
 
 // startHardened runs a provider config through hardenConfig, builds it and
@@ -182,6 +184,81 @@ func TestHardenConfigDropsGeodataBlock(t *testing.T) {
 		`{"cron":"@every 1h","outbound":"direct","assets":[{"url":"https://example.com/geosite.dat","file":"geosite.dat"}]}`,
 		"xray.app.geodata.Config", dir)
 	assertBlockRemovedFromOutput(t, "geodata")
+}
+
+// vlessReverseTags returns the reverse tag of every built VLESS outbound that
+// has one.
+func vlessReverseTags(t *testing.T, built *xcore.Config) []string {
+	t.Helper()
+	var tags []string
+	for _, h := range built.Outbound {
+		msg, err := h.ProxySettings.GetInstance()
+		if err != nil {
+			continue
+		}
+		cfg, ok := msg.(*vlessout.Config)
+		if !ok || cfg.Vnext == nil || cfg.Vnext.User == nil {
+			continue
+		}
+		acc, err := cfg.Vnext.User.Account.GetInstance()
+		if err != nil {
+			continue
+		}
+		if account, ok := acc.(*vless.Account); ok && account.Reverse != nil {
+			tags = append(tags, account.Reverse.Tag)
+		}
+	}
+	return tags
+}
+
+// A VLESS outbound with "reverse" in its settings becomes a reverse bridge: a
+// couple of seconds after Start it dials out to the server by itself, and then
+// every request the server sends back through that connection is dispatched
+// from the phone, to any address the router allows, with the reverse tag as
+// the inbound tag. The server picks the targets, not the user.
+func TestHardenConfigDropsVlessReverse(t *testing.T) {
+	const sample = `{
+		"outbounds": [
+			{"protocol": "vless", "tag": "proxy",
+			 "settings": {"address": "10.0.0.1", "port": 443, "id": "11111111-1111-1111-1111-111111111111",
+			              "encryption": "none", %q: {"tag": "r"}},
+			 "streamSettings": {"network": "tcp", "security": "none"}},
+			{"protocol": "freedom", "tag": "direct"}
+		],
+		"routing": {"rules": [{"type": "field", "inboundTag": ["r"], "outboundTag": "direct"}]}
+	}`
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+
+	// The key may be spelled in any case, see assertListenerBlockDropped.
+	for _, key := range []string{"reverse", "REVERSE", "Reverse"} {
+		t.Run(key, func(t *testing.T) {
+			cfg := fmt.Sprintf(sample, key)
+
+			// Without hardening the test config really is a reverse bridge.
+			plain, err := buildCoreConfig(cfg, "")
+			if err != nil {
+				t.Fatalf("buildCoreConfig(provider config): %v", err)
+			}
+			if got := vlessReverseTags(t, plain); len(got) != 1 {
+				t.Fatalf("test config has reverse tags %v, want one: the test would prove nothing", got)
+			}
+
+			hardened, err := hardenConfig(cfg, p, false)
+			if err != nil {
+				t.Fatalf("hardenConfig: %v", err)
+			}
+			built, err := buildCoreConfig(hardened, "")
+			if err != nil {
+				t.Fatalf("buildCoreConfig(hardened): %v", err)
+			}
+			if got := vlessReverseTags(t, built); len(got) != 0 {
+				t.Errorf("the hardened config still has VLESS reverse tags %v", got)
+			}
+			if len(built.Outbound) != 2 {
+				t.Errorf("hardened config has %d outbounds, want 2: the outbound itself must stay", len(built.Outbound))
+			}
+		})
+	}
 }
 
 // The env block makes xray call os.Setenv for every entry, and xray re-reads
