@@ -12,6 +12,11 @@ var forbiddenBlocks = []string{
 	// HTTP server with /debug/pprof/* and expvar, no authentication: goroutine
 	// stacks, heap contents, the process command line.
 	"metrics",
+	// os.Setenv for every entry, in the long-lived process. xray re-reads its
+	// settings from the environment when an instance is created, so the config
+	// can switch on the browser dialer (an HTTP/WebSocket server), move the
+	// geo asset directory or set GODEBUG, and the values outlive the session.
+	"env",
 }
 
 // dropForbiddenBlocks removes every forbidden block from cfg.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -57,14 +58,21 @@ func withBlock(t *testing.T, key, blockJSON string) string {
 	return string(out)
 }
 
-// assertNotListening fails if something accepts connections on addr. xray
-// opens its listeners synchronously in Start, so no waiting is needed.
+// assertNotListening fails if something accepts connections on addr within a
+// short window. Most xray listeners are open when Start returns, but some
+// (the browser dialer) start on their own goroutine, so one dial is not
+// enough to prove a port stays closed.
 func assertNotListening(t *testing.T, addr string) {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, time.Second)
-	if err == nil {
-		conn.Close()
-		t.Errorf("%s accepts connections: the provider config opened a listener", addr)
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			conn.Close()
+			t.Errorf("%s accepts connections: the provider config opened a listener", addr)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -127,4 +135,40 @@ func TestHardenConfigDropsMetricsBlock(t *testing.T) {
 		return fmt.Sprintf(`{"tag":"metrics","listen":%q}`, addr)
 	})
 	assertBlockRemovedFromOutput(t, "metrics")
+}
+
+// The env block makes xray call os.Setenv for every entry, and xray re-reads
+// its settings from the environment when an instance is created. Through it
+// the config can switch on the browser dialer, an HTTP/WebSocket server.
+func TestHardenConfigDropsEnvBlockListener(t *testing.T) {
+	// Restores the variable (unset) when the test ends; xray sets it directly.
+	t.Setenv("xray.browser.dialer", "")
+
+	assertListenerBlockDropped(t, "env", func(addr string) string {
+		return fmt.Sprintf(`{"xray.browser.dialer":%q}`, addr)
+	})
+	assertBlockRemovedFromOutput(t, "env")
+}
+
+// Whatever the config puts in env would also stay in the process after the
+// session and leak into the next one (a GODEBUG value takes effect in the Go
+// runtime at once, xray.location.asset redirects the geo files).
+func TestBuildHardenedConfigLeavesEnvironmentAlone(t *testing.T) {
+	const canary = "SLIPSTREAM_TEST_CANARY"
+	t.Setenv(canary, "")
+
+	p, err := newProxyParams()
+	if err != nil {
+		t.Fatalf("newProxyParams: %v", err)
+	}
+	hardened, err := hardenConfig(withBlock(t, "env", fmt.Sprintf(`{%q:"set-by-provider"}`, canary)), p, false)
+	if err != nil {
+		t.Fatalf("hardenConfig: %v", err)
+	}
+	if _, err := buildCoreConfig(hardened, ""); err != nil {
+		t.Fatalf("buildCoreConfig: %v", err)
+	}
+	if got := os.Getenv(canary); got != "" {
+		t.Errorf("%s = %q after building the config: the provider changed the process environment", canary, got)
+	}
 }
