@@ -58,20 +58,52 @@ func deleteKey(m map[string]any, name string) {
 // Shapes that are not what xray expects (outbounds not a list, settings not an
 // object) are left alone: xray rejects them anyway.
 func dropOutboundReverse(cfg map[string]any) {
-	for key, value := range cfg {
-		if !strings.EqualFold(key, "outbounds") {
-			continue
+	forEachObject(cfg, []string{"outbounds", "[]", "settings"}, func(settings map[string]any) {
+		deleteKey(settings, "reverse")
+	})
+}
+
+// dropFinalmaskPortMapping removes "portMapping" from the settings of every
+// finalmask of every outbound.
+//
+// The realm mask can ask the user's router for a port mapping (UPnP or
+// NAT-PMP) when the transport starts. That opens a port on the router, from
+// the internet, that forwards to the phone's UDP socket, and discovering the
+// gateway is itself traffic on the local network. The mapping outlives the
+// connection for its lifetime and is the provider's choice, not the user's.
+// The realm mask keeps working without it.
+func dropFinalmaskPortMapping(cfg map[string]any) {
+	for _, layer := range []string{"tcp", "udp"} {
+		path := []string{"outbounds", "[]", "streamSettings", "finalmask", layer, "[]", "settings"}
+		forEachObject(cfg, path, func(settings map[string]any) {
+			deleteKey(settings, "portMapping")
+		})
+	}
+}
+
+// forEachObject calls visit for every JSON object reached from node by
+// following path. A path element is an object key, matched ignoring case, or
+// "[]", which steps into each element of a list. A node of any other shape
+// ends that branch of the walk: xray rejects such configs anyway.
+func forEachObject(node any, path []string, visit func(map[string]any)) {
+	if len(path) == 0 {
+		if object, ok := node.(map[string]any); ok {
+			visit(object)
 		}
-		outbounds, _ := value.([]any)
-		for _, o := range outbounds {
-			outbound, _ := o.(map[string]any)
-			for field, s := range outbound {
-				if !strings.EqualFold(field, "settings") {
-					continue
-				}
-				settings, _ := s.(map[string]any)
-				deleteKey(settings, "reverse")
-			}
+		return
+	}
+	step, rest := path[0], path[1:]
+	if step == "[]" {
+		list, _ := node.([]any)
+		for _, item := range list {
+			forEachObject(item, rest, visit)
+		}
+		return
+	}
+	object, _ := node.(map[string]any)
+	for key, child := range object {
+		if strings.EqualFold(key, step) {
+			forEachObject(child, rest, visit)
 		}
 	}
 }

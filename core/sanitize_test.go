@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xtls/xray-core/app/proxyman"
 	xcore "github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/proxy/vless"
 	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
+	"github.com/xtls/xray-core/transport/internet/finalmask/realm"
 )
 
 // startHardened runs a provider config through hardenConfig, builds it and
@@ -253,6 +255,82 @@ func TestHardenConfigDropsVlessReverse(t *testing.T) {
 			}
 			if got := vlessReverseTags(t, built); len(got) != 0 {
 				t.Errorf("the hardened config still has VLESS reverse tags %v", got)
+			}
+			if len(built.Outbound) != 2 {
+				t.Errorf("hardened config has %d outbounds, want 2: the outbound itself must stay", len(built.Outbound))
+			}
+		})
+	}
+}
+
+// enabledPortMappings counts the built realm masks that ask the router for a
+// port mapping.
+func enabledPortMappings(t *testing.T, built *xcore.Config) int {
+	t.Helper()
+	n := 0
+	for _, h := range built.Outbound {
+		msg, err := h.SenderSettings.GetInstance()
+		if err != nil {
+			continue
+		}
+		sender, ok := msg.(*proxyman.SenderConfig)
+		if !ok || sender.StreamSettings == nil {
+			continue
+		}
+		for _, mask := range sender.StreamSettings.Udpmasks {
+			inst, err := mask.GetInstance()
+			if err != nil {
+				continue
+			}
+			if r, ok := inst.(*realm.Config); ok && r.PortMapping.GetEnabled() {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// The realm mask can ask the user's router for a port mapping (UPnP or
+// NAT-PMP) when the transport starts, which opens a port on the router that
+// forwards to the phone's UDP socket.
+func TestHardenConfigDropsRealmPortMapping(t *testing.T) {
+	const sample = `{
+		"outbounds": [
+			{"protocol": "vless", "tag": "proxy",
+			 "settings": {"address": "10.0.0.1", "port": 443, "id": "11111111-1111-1111-1111-111111111111", "encryption": "none"},
+			 "streamSettings": {"network": "kcp", "security": "none",
+			   "finalmask": {"udp": [{"type": "realm", "settings": {
+			     "url": "realm://token@example.com:443/room",
+			     "stunServers": ["stun.example.com:3478"],
+			     %q: {"enabled": true, "timeout": 5, "lifetime": 600}}}]}}},
+			{"protocol": "freedom", "tag": "direct"}
+		]
+	}`
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+
+	for _, key := range []string{"portMapping", "PORTMAPPING", "Portmapping"} {
+		t.Run(key, func(t *testing.T) {
+			cfg := fmt.Sprintf(sample, key)
+
+			// Without hardening the test config really asks for a mapping.
+			plain, err := buildCoreConfig(cfg, "")
+			if err != nil {
+				t.Fatalf("buildCoreConfig(provider config): %v", err)
+			}
+			if got := enabledPortMappings(t, plain); got != 1 {
+				t.Fatalf("test config has %d port mappings, want 1: the test would prove nothing", got)
+			}
+
+			hardened, err := hardenConfig(cfg, p, false)
+			if err != nil {
+				t.Fatalf("hardenConfig: %v", err)
+			}
+			built, err := buildCoreConfig(hardened, "")
+			if err != nil {
+				t.Fatalf("buildCoreConfig(hardened): %v", err)
+			}
+			if got := enabledPortMappings(t, built); got != 0 {
+				t.Errorf("the hardened config still asks for %d router port mappings", got)
 			}
 			if len(built.Outbound) != 2 {
 				t.Errorf("hardened config has %d outbounds, want 2: the outbound itself must stay", len(built.Outbound))
