@@ -81,6 +81,52 @@ func TestStartClosesTunFdOnFailure(t *testing.T) {
 	}
 }
 
+// The debug commands exist for adb broadcasts that only a debuggable app
+// registers. The core must not rely on that alone: in a release build, where
+// SetVerboseLogs(true) is never called, they refuse to run.
+func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
+	slipcore.SetVerboseLogs(false)
+	dir := t.TempDir()
+
+	if path, err := WriteHeapProfile(dir, "x"); err == nil {
+		t.Errorf("WriteHeapProfile() = %q in a release build, want an error", path)
+	}
+	if path, err := WriteGoroutineDump(dir, "x"); err == nil {
+		t.Errorf("WriteGoroutineDump() = %q in a release build, want an error", path)
+	}
+	if err := SetGCTuning(50, 0); err == nil {
+		t.Error("SetGCTuning() succeeded in a release build, want an error")
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Errorf("release build left %d files in the dump directory", len(left))
+	}
+	if got := slipcore.ReadMemorySnapshot().GCPercent; got != 25 {
+		t.Errorf("gogc = %d after a refused SetGCTuning, want 25", got)
+	}
+}
+
+func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
+	slipcore.SetVerboseLogs(true)
+	t.Cleanup(func() {
+		slipcore.SetVerboseLogs(false)
+		_ = slipcore.SetGCTuning(25, 0)
+	})
+	dir := t.TempDir()
+
+	if _, err := WriteHeapProfile(dir, "x"); err != nil {
+		t.Errorf("WriteHeapProfile() in a debug build: %v", err)
+	}
+	if _, err := WriteGoroutineDump(dir, "x"); err != nil {
+		t.Errorf("WriteGoroutineDump() in a debug build: %v", err)
+	}
+	if err := SetGCTuning(50, 0); err != nil {
+		t.Errorf("SetGCTuning() in a debug build: %v", err)
+	}
+	if got := slipcore.ReadMemorySnapshot().GCPercent; got != 50 {
+		t.Errorf("gogc = %d after SetGCTuning(50), want 50", got)
+	}
+}
+
 func TestStopKeepsMemoryLog(t *testing.T) {
 	slipcore.SetVerboseLogs(true) // debug build
 	SetMemoryLog(true)

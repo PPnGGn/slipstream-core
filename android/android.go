@@ -9,6 +9,7 @@
 package android
 
 import (
+	"errors"
 	"fmt"
 
 	slipcore "slipstream-core/core"
@@ -140,24 +141,38 @@ func SetMemoryLog(on bool) {
 	slipcore.SetMemoryLog(on)
 }
 
+// errDebugOnly is what the debug commands return in a release build.
+var errDebugOnly = errors.New("debug builds only: SetVerboseLogs(true) was not called")
+
 // SetGCTuning changes the GC settings at once: percent is GOGC (> 0), limitMB
 // a soft memory limit in MB (0 = none). Debug builds call it from an adb
-// broadcast to compare settings on a live session, see V2RayVpnService.
+// broadcast to compare settings on a live session, see V2RayVpnService. It
+// refuses to run unless SetVerboseLogs(true) was called.
 func SetGCTuning(percent int, limitMB int) error {
+	if !slipcore.VerboseLogs() {
+		return errDebugOnly
+	}
 	return slipcore.SetGCTuning(percent, int64(limitMB)<<20)
 }
 
 // WriteHeapProfile writes the core's heap profile into dir (the app's
 // filesDir) as heap[-name].pprof and returns the path. Debug builds only: the
-// app wires it to an adb broadcast, see V2RayVpnService.
+// app wires it to an adb broadcast, see V2RayVpnService, and the call refuses
+// to run unless SetVerboseLogs(true) was called.
 func WriteHeapProfile(dir string, name string) (string, error) {
+	if !slipcore.VerboseLogs() {
+		return "", errDebugOnly
+	}
 	return slipcore.WriteHeapProfile(dir, name)
 }
 
 // WriteGoroutineDump writes every goroutine's stack into dir (the app's
 // filesDir) as goroutines[-name].txt and returns the path. Debug builds only,
-// on the same adb broadcast as WriteHeapProfile.
+// on the same adb broadcast as WriteHeapProfile and with the same refusal.
 func WriteGoroutineDump(dir string, name string) (string, error) {
+	if !slipcore.VerboseLogs() {
+		return "", errDebugOnly
+	}
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 

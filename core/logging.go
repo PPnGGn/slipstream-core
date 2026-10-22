@@ -46,6 +46,9 @@ var verboseLogs atomic.Bool
 // SetVerboseLogs takes effect on the next Start.
 func SetVerboseLogs(on bool) { verboseLogs.Store(on) }
 
+// VerboseLogs reports whether this is a debug build, see SetVerboseLogs.
+func VerboseLogs() bool { return verboseLogs.Load() }
+
 func InstallLogForwarding() {
 	xraylog.RegisterHandler(&xrayLogForwarder{})
 	tunlog.SetLogger(newTun2socksForwardingLogger())
