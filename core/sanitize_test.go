@@ -137,6 +137,53 @@ func TestHardenConfigDropsMetricsBlock(t *testing.T) {
 	assertBlockRemovedFromOutput(t, "metrics")
 }
 
+// assertBlockNotBuilt checks that a top-level block does not reach xray: the
+// hardened config is built and none of the app configs in the result may be of
+// protoType. For blocks that act on their own after Start (a schedule, a
+// bridge) with nothing to dial, this is the observable proof they are gone.
+func assertBlockNotBuilt(t *testing.T, name, blockJSON, protoType, assetDir string) {
+	t.Helper()
+	for _, key := range []string{name, strings.ToUpper(name), strings.ToUpper(name[:1]) + name[1:]} {
+		t.Run(key, func(t *testing.T) {
+			p, err := newProxyParams()
+			if err != nil {
+				t.Fatalf("newProxyParams: %v", err)
+			}
+			hardened, err := hardenConfig(withBlock(t, key, blockJSON), p, false)
+			if err != nil {
+				t.Fatalf("hardenConfig: %v", err)
+			}
+			built, err := buildCoreConfig(hardened, assetDir)
+			if err != nil {
+				t.Fatalf("buildCoreConfig: %v", err)
+			}
+			for _, app := range built.App {
+				if app.Type == protoType {
+					t.Errorf("the built config contains %s: the block reached xray", protoType)
+				}
+			}
+		})
+	}
+}
+
+// The geodata block schedules a download: on a cron schedule, while the tunnel
+// is up, xray fetches the listed URLs and replaces the named files in the geo
+// directory, which the app shares between all configs.
+func TestHardenConfigDropsGeodataBlock(t *testing.T) {
+	// buildCoreConfig exports the asset directory through the environment.
+	t.Cleanup(func() {
+		os.Unsetenv("xray.location.asset")
+		os.Unsetenv("XRAY_LOCATION_ASSET")
+	})
+	dir := t.TempDir()
+	writeGeoFixtures(t, dir) // the block is only accepted for files that exist
+
+	assertBlockNotBuilt(t, "geodata",
+		`{"cron":"@every 1h","outbound":"direct","assets":[{"url":"https://example.com/geosite.dat","file":"geosite.dat"}]}`,
+		"xray.app.geodata.Config", dir)
+	assertBlockRemovedFromOutput(t, "geodata")
+}
+
 // The env block makes xray call os.Setenv for every entry, and xray re-reads
 // its settings from the environment when an instance is created. Through it
 // the config can switch on the browser dialer, an HTTP/WebSocket server.

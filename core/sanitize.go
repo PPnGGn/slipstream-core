@@ -17,6 +17,10 @@ var forbiddenBlocks = []string{
 	// can switch on the browser dialer (an HTTP/WebSocket server), move the
 	// geo asset directory or set GODEBUG, and the values outlive the session.
 	"env",
+	// A cron schedule that downloads the listed URLs while the tunnel is up and
+	// replaces the named files in the geo directory. That directory is shared
+	// by every config, so one provider could swap the routing data of the rest.
+	"geodata",
 }
 
 // dropForbiddenBlocks removes every forbidden block from cfg.
