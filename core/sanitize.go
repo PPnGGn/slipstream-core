@@ -28,6 +28,10 @@ var forbiddenBlocks = []string{
 	// long s, folds to "inbounds" but sorts later) and win, or merge with ours
 	// into an inbound that listens without a password.
 	"inbounds",
+	// Same for log, which hardenConfig also sets itself. A leftover spelling is
+	// merged into ours, and its "access"/"error" file paths would survive: xray
+	// creates and opens those files (mode 0600, append) in the app's sandbox.
+	"log",
 }
 
 // dropForbiddenBlocks removes every forbidden block from cfg.

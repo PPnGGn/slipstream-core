@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -160,6 +161,29 @@ func TestHardenConfigReplacesInboundsInEverySpelling(t *testing.T) {
 
 			startHardened(t, cfg)
 			assertNotListening(t, addr)
+		})
+	}
+}
+
+// hardenConfig replaces the log block with one that writes nowhere. As with
+// inbounds, a provider key spelled differently must not survive: the two log
+// blocks are decoded into the same field and merged, so a log file path from
+// the provider would stay in the result.
+func TestHardenConfigReplacesLogInEverySpelling(t *testing.T) {
+	for _, key := range []string{"log", "LOG", "Log"} {
+		t.Run(key, func(t *testing.T) {
+			dir := t.TempDir()
+			errorLog := filepath.Join(dir, "error.log")
+			accessLog := filepath.Join(dir, "access.log")
+			cfg := withBlock(t, key, fmt.Sprintf(`{"error":%q,"access":%q}`, errorLog, accessLog))
+
+			startHardened(t, cfg)
+
+			for _, path := range []string{errorLog, accessLog} {
+				if _, err := os.Stat(path); err == nil {
+					t.Errorf("%s exists: the provider config made xray open a file of its choice", filepath.Base(path))
+				}
+			}
 		})
 	}
 }
