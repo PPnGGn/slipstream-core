@@ -141,6 +141,29 @@ func TestHardenConfigDropsMetricsBlock(t *testing.T) {
 	assertBlockRemovedFromOutput(t, "metrics")
 }
 
+// hardenConfig replaces the inbounds of a provider config with its own. The
+// replacement must not depend on how the provider spells the key: encoding/json
+// maps a key onto a field by simple case folding, and folding goes beyond
+// ASCII ("ſ", U+017F, folds to "s"). Such a key sorts after our "inbounds" when
+// the config is encoded again, so xray reads it last, and an inbound that
+// listens without a password replaces ours.
+func TestHardenConfigReplacesInboundsInEverySpelling(t *testing.T) {
+	for _, key := range []string{"inbounds", "INBOUNDS", "Inbounds", "inboundſ", "INBOUNDſ"} {
+		t.Run(key, func(t *testing.T) {
+			port, err := freePort()
+			if err != nil {
+				t.Fatalf("freePort: %v", err)
+			}
+			addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
+			cfg := withBlock(t, key, fmt.Sprintf(
+				`[{"tag":"open","listen":"127.0.0.1","port":%d,"protocol":"socks","settings":{"auth":"noauth","udp":true}}]`, port))
+
+			startHardened(t, cfg)
+			assertNotListening(t, addr)
+		})
+	}
+}
+
 // assertBlockNotBuilt checks that a top-level block does not reach xray: the
 // hardened config is built and none of the app configs in the result may be of
 // protoType. For blocks that act on their own after Start (a schedule, a

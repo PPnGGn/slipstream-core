@@ -21,6 +21,13 @@ var forbiddenBlocks = []string{
 	// replaces the named files in the geo directory. That directory is shared
 	// by every config, so one provider could swap the routing data of the rest.
 	"geodata",
+	// hardenConfig sets its own inbounds, so the provider's must go first, in
+	// every spelling. Setting ours is not enough: when two keys of the config
+	// map onto the same field, encoding/json decodes both into it, in key
+	// order, and the provider's key can sort after ours ("inboundſ", with the
+	// long s, folds to "inbounds" but sorts later) and win, or merge with ours
+	// into an inbound that listens without a password.
+	"inbounds",
 }
 
 // dropForbiddenBlocks removes every forbidden block from cfg.
