@@ -68,33 +68,34 @@ func assertNotListening(t *testing.T, addr string) {
 	}
 }
 
-// A provider config must not be able to start xray's gRPC management API:
-// it has no authentication, and HandlerService can add inbounds and list
-// outbounds (server addresses and keys).
-func TestHardenConfigDropsAPIBlock(t *testing.T) {
+// assertListenerBlockDropped checks that a top-level block which makes xray
+// listen on an address is removed: it starts a real xray instance with the
+// block pointing at a free port and expects the port to stay closed. blockFor
+// renders the block's JSON for a given listen address.
+func assertListenerBlockDropped(t *testing.T, name string, blockFor func(addr string) string) {
+	t.Helper()
 	// The key may be spelled in any case: encoding/json, which xray uses to
 	// read the config, matches field names case-insensitively.
-	for _, key := range []string{"api", "API", "Api"} {
+	for _, key := range []string{name, strings.ToUpper(name), strings.ToUpper(name[:1]) + name[1:]} {
 		t.Run(key, func(t *testing.T) {
 			port, err := freePort()
 			if err != nil {
 				t.Fatalf("freePort: %v", err)
 			}
 			addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
-			cfg := withBlock(t, key, fmt.Sprintf(
-				`{"tag":"api","listen":%q,"services":["HandlerService"]}`, addr))
 
-			startHardened(t, cfg)
+			startHardened(t, withBlock(t, key, blockFor(addr)))
 			assertNotListening(t, addr)
 		})
 	}
 }
 
-func TestHardenConfigDropsAPIBlockFromOutput(t *testing.T) {
+// assertBlockRemovedFromOutput checks that no spelling of the key survives in
+// the JSON hardenConfig produces.
+func assertBlockRemovedFromOutput(t *testing.T, name string) {
+	t.Helper()
 	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
-	cfg := withBlock(t, "API", `{"tag":"api","services":["HandlerService"]}`)
-
-	out, err := hardenConfig(cfg, p, false)
+	out, err := hardenConfig(withBlock(t, strings.ToUpper(name), `{}`), p, false)
 	if err != nil {
 		t.Fatalf("hardenConfig: %v", err)
 	}
@@ -103,8 +104,27 @@ func TestHardenConfigDropsAPIBlockFromOutput(t *testing.T) {
 		t.Fatalf("decode result: %v", err)
 	}
 	for key := range after {
-		if strings.EqualFold(key, "api") {
+		if strings.EqualFold(key, name) {
 			t.Errorf("key %q survived hardenConfig", key)
 		}
 	}
+}
+
+// A provider config must not be able to start xray's gRPC management API:
+// it has no authentication, and HandlerService can add inbounds and list
+// outbounds (server addresses and keys).
+func TestHardenConfigDropsAPIBlock(t *testing.T) {
+	assertListenerBlockDropped(t, "api", func(addr string) string {
+		return fmt.Sprintf(`{"tag":"api","listen":%q,"services":["HandlerService"]}`, addr)
+	})
+	assertBlockRemovedFromOutput(t, "api")
+}
+
+// The metrics block starts an HTTP server with /debug/pprof/* and expvar:
+// goroutine stacks, heap contents and command line, no authentication.
+func TestHardenConfigDropsMetricsBlock(t *testing.T) {
+	assertListenerBlockDropped(t, "metrics", func(addr string) string {
+		return fmt.Sprintf(`{"tag":"metrics","listen":%q}`, addr)
+	})
+	assertBlockRemovedFromOutput(t, "metrics")
 }

@@ -9,6 +9,9 @@ var forbiddenBlocks = []string{
 	// gRPC management API with no authentication: HandlerService adds inbounds
 	// (an open proxy on the LAN) and lists outbounds (server addresses, keys).
 	"api",
+	// HTTP server with /debug/pprof/* and expvar, no authentication: goroutine
+	// stacks, heap contents, the process command line.
+	"metrics",
 }
 
 // dropForbiddenBlocks removes every forbidden block from cfg.
