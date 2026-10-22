@@ -1,7 +1,9 @@
 package core
 
 import (
+	"os"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/xjasonlyu/tun2socks/v2/tunnel/statistic"
@@ -20,6 +22,31 @@ func (c *fakeRelayedConn) Close() error {
 	c.closed.Store(true)
 	statistic.DefaultManager.Leave(c) // what the real trackers do
 	return nil
+}
+
+// StartTun owns the descriptor from the call on, so it must close it when it
+// refuses to start, too.
+func TestStartTunClosesFdWhenXrayIsNotRunning(t *testing.T) {
+	clearActiveProxy()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	t.Cleanup(func() { r.Close(); w.Close() })
+	fd, err := syscall.Dup(int(r.Fd()))
+	if err != nil {
+		t.Fatalf("dup: %v", err)
+	}
+
+	if err := StartTun(fd); err == nil {
+		t.Fatal("StartTun() succeeded with no xray running")
+	}
+	var st syscall.Stat_t
+	if syscall.Fstat(fd, &st) == nil {
+		syscall.Close(fd)
+		t.Errorf("descriptor %d is still open after a refused StartTun", fd)
+	}
 }
 
 func TestStopTunClosesRelayedConns(t *testing.T) {

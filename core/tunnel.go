@@ -11,6 +11,7 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/tunnel/statistic"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
+	"os"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -26,9 +27,23 @@ const (
 )
 
 // --- fd-based path (Android) -------------------------------------------------
+
+// CloseTunFd closes a TUN descriptor that never reached StartTun. The app
+// detaches the descriptor from its ParcelFileDescriptor before handing it
+// over, so from then on the core is the only one that can close it: if the
+// core does not, the VPN interface stays up with nothing reading from it and
+// the phone has no network until the process dies.
+func CloseTunFd(fd int) {
+	_ = os.NewFile(uintptr(fd), "tun").Close()
+}
+
+// StartTun starts tun2socks on the TUN descriptor fd and takes ownership of
+// it: on success tun2socks closes it with the device, and when StartTun
+// refuses to start it closes it itself.
 func StartTun(fd int) error {
 	p, ok := activeProxyParams()
 	if !ok {
+		CloseTunFd(fd)
 		return fmt.Errorf("start tun: xray is not running")
 	}
 

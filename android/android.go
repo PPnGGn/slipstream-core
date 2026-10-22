@@ -49,15 +49,23 @@ func SetVerboseLogs(on bool) {
 	slipcore.SetVerboseLogs(on)
 }
 
+// Start starts xray and tun2socks. fd is the TUN descriptor, already detached
+// from the app's ParcelFileDescriptor: Start owns it from the call on and
+// closes it when it fails, so the app must not close it either way.
 func Start(configJson string, fd int, assetDir string) (err error) {
+	handedOver := false // StartTun owns the descriptor from its call on
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("android.Start: panic recovered: %v", r)
+		}
+		if err != nil && !handedOver {
+			slipcore.CloseTunFd(fd)
 		}
 	}()
 	if err := slipcore.StartXray(configJson, assetDir); err != nil {
 		return err
 	}
+	handedOver = true
 	if err := slipcore.StartTun(fd); err != nil {
 		_ = slipcore.StopXray()
 		return err
