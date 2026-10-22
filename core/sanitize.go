@@ -2,46 +2,55 @@ package core
 
 import "strings"
 
-// forbiddenBlocks are top-level config blocks a provider config must not
-// carry. Each one lets the config open a listener, touch the process
-// environment or reach beyond the tunnel; the app needs none of them.
-var forbiddenBlocks = []string{
-	// gRPC management API with no authentication: HandlerService adds inbounds
-	// (an open proxy on the LAN) and lists outbounds (server addresses, keys).
-	"api",
-	// HTTP server with /debug/pprof/* and expvar, no authentication: goroutine
-	// stacks, heap contents, the process command line.
-	"metrics",
-	// os.Setenv for every entry, in the long-lived process. xray re-reads its
-	// settings from the environment when an instance is created, so the config
-	// can switch on the browser dialer (an HTTP/WebSocket server), move the
-	// geo asset directory or set GODEBUG, and the values outlive the session.
-	"env",
-	// A cron schedule that downloads the listed URLs while the tunnel is up and
-	// replaces the named files in the geo directory. That directory is shared
-	// by every config, so one provider could swap the routing data of the rest.
-	"geodata",
-	// hardenConfig sets its own inbounds, so the provider's must go first, in
-	// every spelling. Setting ours is not enough: when two keys of the config
-	// map onto the same field, encoding/json decodes both into it, in key
-	// order, and the provider's key can sort after ours ("inboundſ", with the
-	// long s, folds to "inbounds" but sorts later) and win, or merge with ours
-	// into an inbound that listens without a password.
-	"inbounds",
-	// Same for log, which hardenConfig also sets itself. A leftover spelling is
-	// merged into ours, and its "access"/"error" file paths would survive: xray
-	// creates and opens those files (mode 0600, append) in the app's sandbox.
-	"log",
+// allowedBlocks are the only top-level blocks of a provider config that reach
+// xray. Everything else is removed, whether xray knows it today or only learns
+// it in a later release: a block we have not looked at must not be a hole.
+//
+// Left out on purpose, each of them was one:
+//   - api: gRPC management API with no authentication; HandlerService adds
+//     inbounds (an open proxy on the LAN) and lists outbounds (server keys).
+//   - metrics: HTTP server with /debug/pprof/* and expvar, no authentication.
+//   - env: os.Setenv in the long-lived process; xray re-reads its settings
+//     from the environment, so the config can switch on the browser dialer
+//     (a listener), move the geo directory or set GODEBUG, for every later
+//     session too.
+//   - geodata: a cron job that downloads URLs and replaces the files of the
+//     geo directory, shared by every config the app runs.
+//   - reverse: removed from xray (the build fails); the VLESS reverse bridge
+//     inside outbounds is handled by dropOutboundReverse.
+//   - inbounds, log: hardenConfig sets its own. A provider key spelled
+//     differently maps onto the same field in encoding/json and is merged into
+//     ours, so every spelling must go first (an "inboundſ" inbound that
+//     listens without a password, a log file path of the provider's choice).
+//   - observatory, burstObservatory: background probes nobody asked for; the
+//     app removes them too.
+//   - version, transport: nothing the client needs.
+var allowedBlocks = []string{
+	"outbounds",
+	"routing",
+	"dns",
+	"policy", // the app turns on the traffic counters through it
+	"stats",
+	"fakedns", // referenced from dns servers
 }
 
-// dropForbiddenBlocks removes every forbidden block from cfg.
+// keepAllowedBlocks removes every key of cfg that is not an allowed block.
 //
 // Keys are compared case-insensitively: xray reads the config with
 // encoding/json, which matches field names that way, so "API" would otherwise
 // reach the same field as "api".
-func dropForbiddenBlocks(cfg map[string]any) {
-	for _, name := range forbiddenBlocks {
-		deleteKey(cfg, name)
+func keepAllowedBlocks(cfg map[string]any) {
+	for key := range cfg {
+		allowed := false
+		for _, name := range allowedBlocks {
+			if strings.EqualFold(key, name) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			delete(cfg, key)
+		}
 	}
 }
 

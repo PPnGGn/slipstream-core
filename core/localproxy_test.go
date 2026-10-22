@@ -176,8 +176,8 @@ func TestLocalInbounds(t *testing.T) {
 }
 
 // hardenSample is a provider-like config: its own inbounds (open, no auth),
-// a verbose log, a private-IP outbound (see geoConfig in xray_test.go) and
-// fields hardenConfig must not touch.
+// a verbose log, a private-IP outbound (see geoConfig in xray_test.go), blocks
+// hardenConfig must not touch and one it drops ("remarks").
 const hardenSample = `{
 	"log": {"loglevel": "debug"},
 	"inbounds": [
@@ -209,10 +209,15 @@ func TestHardenConfig(t *testing.T) {
 	}
 
 	// Untouched fields are deeply equal to the input.
-	for _, key := range []string{"outbounds", "routing", "dns", "remarks"} {
+	for _, key := range []string{"outbounds", "routing", "dns"} {
 		if !reflect.DeepEqual(before[key], after[key]) {
 			t.Errorf("%q changed:\n before: %v\n after:  %v", key, before[key], after[key])
 		}
+	}
+	// "remarks" is a name for the user, not something xray needs: only the
+	// allowed blocks pass (see TestHardenConfigKeepsOnlyAllowedBlocks).
+	if _, ok := after["remarks"]; ok {
+		t.Errorf("remarks survived hardenConfig")
 	}
 
 	// Old inbounds are gone, ours are in.

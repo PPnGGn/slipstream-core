@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -140,6 +141,64 @@ func TestHardenConfigDropsMetricsBlock(t *testing.T) {
 		return fmt.Sprintf(`{"tag":"metrics","listen":%q}`, addr)
 	})
 	assertBlockRemovedFromOutput(t, "metrics")
+}
+
+// Only the blocks the client needs pass: outbounds, routing, dns, policy,
+// stats and fakeDns. Everything else, known or not yet invented, is removed,
+// so a block that a later xray release adds does not become a new hole.
+func TestHardenConfigKeepsOnlyAllowedBlocks(t *testing.T) {
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(hardenSample), &cfg); err != nil {
+		t.Fatalf("decode sample: %v", err)
+	}
+	kept := map[string]any{
+		"policy":  map[string]any{"system": map[string]any{"statsOutboundUplink": true}},
+		"stats":   map[string]any{},
+		"fakeDns": map[string]any{"ipPool": "198.18.0.0/15", "poolSize": float64(128)},
+	}
+	for key, value := range kept {
+		cfg[key] = value
+	}
+	removed := []string{
+		"someFutureBlock", "remarks", "observatory", "burstObservatory", "version", "transport",
+		"api", "metrics", "env", "geodata", "reverse",
+	}
+	for _, key := range removed {
+		cfg[key] = map[string]any{"x": "y"}
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	out, err := hardenConfig(string(raw), p, false)
+	if err != nil {
+		t.Fatalf("hardenConfig: %v", err)
+	}
+	var after map[string]any
+	if err := json.Unmarshal([]byte(out), &after); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+
+	for _, key := range []string{"outbounds", "routing", "dns", "policy", "stats", "fakeDns"} {
+		want := cfg[key]
+		if got, ok := after[key]; !ok || !reflect.DeepEqual(got, want) {
+			t.Errorf("%q = %v (present: %v), want %v", key, got, ok, want)
+		}
+	}
+	for _, key := range removed {
+		if _, ok := after[key]; ok {
+			t.Errorf("block %q survived hardenConfig", key)
+		}
+	}
+	// inbounds and log are ours, not the provider's.
+	if inbounds, _ := after["inbounds"].([]any); len(inbounds) != 2 {
+		t.Errorf("inbounds = %v, want our two", after["inbounds"])
+	}
+	if logCfg, _ := after["log"].(map[string]any); logCfg["loglevel"] != "warning" {
+		t.Errorf("log = %v, want ours", after["log"])
+	}
 }
 
 // hardenConfig replaces the inbounds of a provider config with its own. The
