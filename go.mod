@@ -1,6 +1,6 @@
 module slipstream-core
 
-go 1.27
+go 1.27.3
 
 require (
 	github.com/xjasonlyu/tun2socks/v2 v2.6.1-0.20260507015325-a9747fa54b2b
