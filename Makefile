@@ -12,16 +12,29 @@
 # ("invalid reference to net.zoneCache") unless -checklinkname=0 is passed. The
 # anet README documents this exact flag; no fork/replace needed.
 
+#
+# Size: -s -w drops the symbol table and DWARF (tracebacks and heap profiles keep
+# their function names, Go reads them from its own tables), -trimpath drops the
+# build machine's paths. Measured: libgojni.so for arm64 76.6 MB -> 38.0 MB, the
+# iOS arm64 framework 86 MB -> 43 MB, and some 17000 paths of the build machine
+# gone from the binary. For a build you want to debug with a native debugger,
+# `make bind-android LDFLAGS=-checklinkname=0`.
+#
+# ANDROID_TARGETS: all four ABIs by default. x86 and x86_64 are only for
+# emulators; `make bind-android ANDROID_TARGETS=android/arm64,android/arm`
+# roughly halves the AAR.
+
 AAR_OUT := ../slipstream/android/app/libs/slipstreamcore.aar
 IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
-LDFLAGS := -checklinkname=0
+LDFLAGS := -checklinkname=0 -s -w
+ANDROID_TARGETS := android
 
 .PHONY: bind bind-android bind-ios build vet tidy check-xray-pin
 
 bind: bind-android bind-ios
 
 bind-android:
-	gomobile bind -ldflags="$(LDFLAGS)" -target=android -androidapi 21 -javapkg com.slipstream -o $(AAR_OUT) ./android
+	gomobile bind -ldflags="$(LDFLAGS)" -trimpath -target=$(ANDROID_TARGETS) -androidapi 21 -javapkg com.slipstream -o $(AAR_OUT) ./android
 
 # iOS device + simulator slices.
 # Works around a gomobile bug: the Info.plist it writes into each slice's
@@ -30,7 +43,7 @@ bind-android:
 # and reports "no such module" with no hint why, so patch it back to our
 # actual deployment target (15.0, matches ios/Runner's IPHONEOS_DEPLOYMENT_TARGET).
 bind-ios:
-	gomobile bind -ldflags="$(LDFLAGS)" -target=ios -o $(IOS_XCFRAMEWORK_OUT) ./ios
+	gomobile bind -ldflags="$(LDFLAGS)" -trimpath -target=ios -o $(IOS_XCFRAMEWORK_OUT) ./ios
 	@for plist in $(IOS_XCFRAMEWORK_OUT)/*/*.framework/Info.plist; do \
 		plutil -replace MinimumOSVersion -string "15.0" "$$plist"; \
 	done
