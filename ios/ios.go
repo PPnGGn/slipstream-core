@@ -1,7 +1,6 @@
 package ios
 
 import (
-	"io"
 	"runtime/debug"
 	slipcore "slipstream-core/core"
 )
@@ -38,15 +37,22 @@ type packetFlowRW struct {
 	flow PacketFlow
 }
 
+// Read hands the next packet of the flow to the stack. Only an error of the
+// flow ends the read side, and with it the tunnel: the stack stops reading on
+// the first error. A packet it cannot use is skipped instead: an empty one, and
+// one longer than b (the MTU), which cut to fit would reach the stack as a
+// corrupt packet whose header promises more than it carries.
 func (p packetFlowRW) Read(b []byte) (int, error) {
-	pkt, err := p.flow.ReadPacket()
-	if err != nil {
-		return 0, err
+	for {
+		pkt, err := p.flow.ReadPacket()
+		if err != nil {
+			return 0, err
+		}
+		if len(pkt) == 0 || len(pkt) > len(b) {
+			continue
+		}
+		return copy(b, pkt), nil
 	}
-	if len(pkt) == 0 {
-		return 0, io.EOF
-	}
-	return copy(b, pkt), nil
 }
 
 func (p packetFlowRW) Write(b []byte) (int, error) {
@@ -66,6 +72,11 @@ func Start(configJson string, flow PacketFlow, assetDir string) error {
 
 // Stop ends the session. Safe to call at any time and any number of times; if
 // a Start is still working, Stop waits for it and then stops what it started.
+//
+// Make the flow's blocked ReadPacket return an error before calling Stop (the
+// app's bridge does it in close()). Stop waits for the read side for two
+// seconds and then gives up, logging it, and the reading goroutine stays
+// behind until ReadPacket returns.
 func Stop() error {
 	return slipcore.Stop()
 }
