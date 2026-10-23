@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // allowedBlocks are the only top-level blocks of a provider config that reach
 // xray. Everything else is removed, whether xray knows it today or only learns
@@ -29,7 +32,7 @@ var allowedBlocks = []string{
 	"outbounds",
 	"routing",
 	"dns",
-	"policy", // the app turns on the traffic counters through it
+	"policy", // levels and timeouts of the provider; ensureTrafficCounters adds the counters
 	"stats",
 	"fakedns", // referenced from dns servers
 }
@@ -52,6 +55,53 @@ func keepAllowedBlocks(cfg map[string]any) {
 			delete(cfg, key)
 		}
 	}
+}
+
+// ensureTrafficCounters switches on the counters QueryTraffic reads: xray
+// counts the bytes of an outbound only with a "stats" block and the two flags
+// policy.system.statsOutboundUplink and statsOutboundDownlink. A provider config
+// has neither, and the core used to leave it to the app to add them, so a
+// config that came without them was counted at zero without a word.
+//
+// What else the provider put in policy (levels, timeouts) is kept. Keys are
+// found ignoring case, as everywhere in this file, and the flags are set under
+// one key each.
+func ensureTrafficCounters(cfg map[string]any) {
+	objectFold(cfg, "stats")
+	system := objectFold(objectFold(cfg, "policy"), "system")
+	for _, flag := range []string{"statsOutboundUplink", "statsOutboundDownlink"} {
+		deleteKey(system, flag)
+		system[flag] = true
+	}
+}
+
+// objectFold returns the object stored in m under name, ignoring case, and
+// makes an empty one when there is none or the value is not an object. A key
+// given in several spellings would be merged by encoding/json in the order of
+// the keys; here the first of them in sorted order is kept and the others are
+// dropped, so the outcome does not depend on the order of a map.
+func objectFold(m map[string]any, name string) map[string]any {
+	var keys []string
+	for key := range m {
+		if strings.EqualFold(key, name) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) > 0 {
+		if object, ok := m[keys[0]].(map[string]any); ok {
+			for _, other := range keys[1:] {
+				delete(m, other)
+			}
+			return object
+		}
+	}
+	for _, key := range keys {
+		delete(m, key)
+	}
+	object := map[string]any{}
+	m[name] = object
+	return object
 }
 
 // deleteKey removes every key of m that equals name, ignoring case. Deleting

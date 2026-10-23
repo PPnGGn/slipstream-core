@@ -13,8 +13,10 @@ import (
 )
 
 // OutboundTag is the tag of the outbound whose traffic QueryTraffic counts: the
-// config must call its proxy outbound that, and turn on the stats and the
-// policy.system.statsOutboundUplink/Downlink flags, or the counters stay at 0.
+// config must call its proxy outbound that, or the counters stay at 0 (the core
+// warns at the start when no outbound has the tag). The stats and the
+// policy.system.statsOutboundUplink/Downlink flags are switched on by the core
+// itself, see ensureTrafficCounters.
 const OutboundTag = "proxy"
 
 var (
@@ -83,6 +85,11 @@ func startXray(configJson string, assetDir string, httpSocket string) error {
 	}
 
 	InstallLogForwarding()
+	if !hasOutboundTag(coreConfig, OutboundTag) {
+		// Not an error of the session, but the app would show no traffic and nobody
+		// would know why.
+		emitLog("warning", `no outbound is tagged "`+OutboundTag+`": the traffic counters will stay at 0`, "core")
+	}
 
 	mu.Lock()
 	if xrayInst != nil { // another startXray won; callers are meant to be serialized
@@ -95,6 +102,17 @@ func startXray(configJson string, assetDir string, httpSocket string) error {
 	// Published only once xray is really up: startTun reads it next.
 	setLive(newXrayProxy(inst, bridgeUserLevel), params)
 	return nil
+}
+
+// hasOutboundTag reports whether one of the outbounds of the built config has
+// the tag.
+func hasOutboundTag(c *core.Config, tag string) bool {
+	for _, outbound := range c.Outbound {
+		if outbound.Tag == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // assetEnvSet is true while the asset variables hold a directory this package

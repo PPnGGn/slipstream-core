@@ -152,7 +152,9 @@ func TestHardenConfigKeepsOnlyAllowedBlocks(t *testing.T) {
 		t.Fatalf("decode sample: %v", err)
 	}
 	kept := map[string]any{
-		"policy":  map[string]any{"system": map[string]any{"statsOutboundUplink": true}},
+		// Both flags already set: hardenConfig adds them (see traffic_test.go) and
+		// this test is about what passes through unchanged.
+		"policy":  map[string]any{"system": map[string]any{"statsOutboundUplink": true, "statsOutboundDownlink": true}},
 		"stats":   map[string]any{},
 		"fakeDns": map[string]any{"ipPool": "198.18.0.0/15", "poolSize": float64(128)},
 	}

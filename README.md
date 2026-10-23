@@ -49,8 +49,9 @@ What to rely on:
 - **The packet flow (iOS).** `ReadPacket` blocks and returns an error only when the flow is closed; the
   extension wakes it before `Stop`. Empty and oversize packets are skipped.
 - **Config.** `configJson` is an xray config. What the core takes from it is described below.
-- **Counters.** `QueryTraffic` counts the outbound tagged `proxy`; the config needs `stats` and
-  `policy.system.statsOutbound*` on or the counters stay at zero.
+- **Counters.** `QueryTraffic` counts the outbound tagged `proxy`. The core switches the counters on itself
+  (`stats` and `policy.system.statsOutbound*`, whatever the config says); only the tag is the config's job, and
+  the core logs a warning at the start when no outbound has it, since the counters would stay at zero.
 - **Logs.** `SetHandler` receives the core's lines. Release builds log warnings and errors only;
   `SetVerboseLogs(true)` (debug builds, before `Start`) adds the info lines.
 - **Memory.** `QueryMemory` is cheap and can be polled; `FreeMemory` runs a GC and gives pages back, off the main

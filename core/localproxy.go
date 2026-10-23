@@ -88,10 +88,10 @@ func localInbounds(p proxyParams) []any {
 // hardenConfig returns a copy of configJson in which every inbound is replaced
 // by what localInbounds says, logging is turned down, every top-level block not
 // listed in allowedBlocks is removed, and so are the reverse setting of
-// outbounds and the router port mapping of finalmask. Everything else
-// (outbounds, routing, dns, policy and the fields inside them) is passed
-// through untouched. verbose (debug builds only, see SetVerboseLogs) keeps xray
-// chatty instead.
+// outbounds and the router port mapping of finalmask. The traffic counters are
+// switched on (ensureTrafficCounters). Everything else (outbounds, routing,
+// dns, policy and the fields inside them) is passed through untouched. verbose
+// (debug builds only, see SetVerboseLogs) keeps xray chatty instead.
 func hardenConfig(configJson string, p proxyParams, verbose bool) (string, error) {
 	// A map keeps fields we know nothing about, unlike a typed struct which
 	// would silently drop them on the way back.
@@ -108,6 +108,7 @@ func hardenConfig(configJson string, p proxyParams, verbose bool) (string, error
 	keepAllowedBlocks(cfg)
 	dropOutboundReverse(cfg)
 	dropFinalmaskPortMapping(cfg)
+	ensureTrafficCounters(cfg)
 
 	cfg["inbounds"] = localInbounds(p)
 	cfg["log"] = xrayLog(verbose)
