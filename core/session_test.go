@@ -12,8 +12,8 @@ import (
 // nothingRuns fails the test unless every part of a session is down.
 func nothingRuns(t *testing.T) {
 	t.Helper()
-	if _, up := activeProxyParams(); up {
-		t.Error("the local proxy parameters are still published")
+	if _, up := liveProxy(); up {
+		t.Error("the bridge to xray is still published")
 	}
 	mu.Lock()
 	xray := xrayInst
@@ -50,7 +50,7 @@ func TestSessionReturnsMemoryOnBothPaths(t *testing.T) {
 	a, _ := socketPair(t)
 
 	for name, start := range map[string]func() error{
-		"fd": func() error { return StartFd(hardenSample, a, "") },
+		"fd": func() error { return StartFd(hardenSample, a, "", "") },
 		"io": func() error { return StartIO(hardenSample, eofReadWriter{}, "") },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -75,11 +75,11 @@ func TestSessionFdStartsAndStops(t *testing.T) {
 	t.Cleanup(func() { _ = Stop() })
 	a, _ := socketPair(t)
 
-	if err := StartFd(hardenSample, a, ""); err != nil {
+	if err := StartFd(hardenSample, a, "", ""); err != nil {
 		t.Fatalf("StartFd: %v", err)
 	}
-	if _, _, _, ok := ActiveHTTPProxy(); !ok {
-		t.Error("no local proxy while the session runs")
+	if _, ok := liveProxy(); !ok {
+		t.Error("no bridge to xray while the session runs")
 	}
 	if !fdIsOpen(a) {
 		t.Error("the descriptor is closed while the session runs")
@@ -116,12 +116,12 @@ func TestSessionRefusesASecondStart(t *testing.T) {
 	useFileDevices(t)
 	t.Cleanup(func() { _ = Stop() })
 	a, _ := socketPair(t)
-	if err := StartFd(hardenSample, a, ""); err != nil {
+	if err := StartFd(hardenSample, a, "", ""); err != nil {
 		t.Fatalf("StartFd: %v", err)
 	}
 
 	c, _ := socketPair(t)
-	err := StartFd(hardenSample, c, "")
+	err := StartFd(hardenSample, c, "", "")
 	if err == nil {
 		t.Fatal("a second StartFd succeeded while a session runs")
 	}
@@ -129,7 +129,7 @@ func TestSessionRefusesASecondStart(t *testing.T) {
 		syscall.Close(c)
 		t.Errorf("descriptor %d of the refused start is still open", c)
 	}
-	if _, _, _, ok := ActiveHTTPProxy(); !ok || !fdIsOpen(a) {
+	if _, ok := liveProxy(); !ok || !fdIsOpen(a) {
 		t.Error("the refused start disturbed the running session")
 	}
 }
@@ -139,7 +139,7 @@ func TestSessionRefusesASecondStart(t *testing.T) {
 func TestSessionRollsBackWhenTheTunnelFails(t *testing.T) {
 	t.Cleanup(func() { _ = Stop() })
 
-	if err := StartFd(hardenSample, -1, ""); err == nil {
+	if err := StartFd(hardenSample, -1, "", ""); err == nil {
 		t.Fatal("StartFd with an invalid descriptor succeeded")
 	}
 	nothingRuns(t)
@@ -147,7 +147,7 @@ func TestSessionRollsBackWhenTheTunnelFails(t *testing.T) {
 	// And the next start works.
 	useFileDevices(t)
 	a, _ := socketPair(t)
-	if err := StartFd(hardenSample, a, ""); err != nil {
+	if err := StartFd(hardenSample, a, "", ""); err != nil {
 		t.Fatalf("StartFd after a failed start: %v", err)
 	}
 }
@@ -155,7 +155,7 @@ func TestSessionRollsBackWhenTheTunnelFails(t *testing.T) {
 func TestSessionFailedXrayStartClosesTheDescriptor(t *testing.T) {
 	a, _ := socketPair(t)
 
-	if err := StartFd("not json", a, ""); err == nil {
+	if err := StartFd("not json", a, "", ""); err == nil {
 		t.Fatal("StartFd with a broken config succeeded")
 	}
 	nothingRuns(t)
@@ -174,7 +174,7 @@ func TestSessionRecoversFromAPanicInStart(t *testing.T) {
 	t.Cleanup(func() { openTunDevice = old })
 	a, _ := socketPair(t)
 
-	err := StartFd(hardenSample, a, "")
+	err := StartFd(hardenSample, a, "", "")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("StartFd = %v, want an error that carries the panic", err)
 	}
@@ -197,7 +197,7 @@ func TestSessionStopWaitsForStart(t *testing.T) {
 	a, _ := socketPair(t)
 
 	startDone := make(chan error, 1)
-	go func() { startDone <- StartFd(hardenSample, a, "") }()
+	go func() { startDone <- StartFd(hardenSample, a, "", "") }()
 	<-entered // Start has xray up and is opening the device
 
 	stopDone := make(chan error, 1)

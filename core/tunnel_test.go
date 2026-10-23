@@ -113,8 +113,8 @@ func useFileDevices(t *testing.T, stuckRead ...bool) {
 // startableProxy makes StartTun believe xray is running.
 func startableProxy(t *testing.T) {
 	t.Helper()
-	setActiveProxy(proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"})
-	t.Cleanup(clearActiveProxy)
+	setLive(fakeProxy{}, proxyParams{})
+	t.Cleanup(clearLive)
 }
 
 // tun2socks' engine ends the whole process (log.Fatalf, exit status 1) when it
@@ -218,7 +218,7 @@ func TestStartTunIOStartsStopsAndRestarts(t *testing.T) {
 }
 
 func TestStartTunIOWithoutXray(t *testing.T) {
-	clearActiveProxy()
+	clearLive()
 	if err := startTunIO(eofReadWriter{}); err == nil {
 		stopTunIO()
 		t.Error("StartTunIO succeeded with no xray running")
@@ -228,7 +228,7 @@ func TestStartTunIOWithoutXray(t *testing.T) {
 // StartTun owns the descriptor from the call on, so it must close it when it
 // refuses to start, too.
 func TestStartTunClosesFdWhenXrayIsNotRunning(t *testing.T) {
-	clearActiveProxy()
+	clearLive()
 
 	r, w, err := os.Pipe()
 	if err != nil {

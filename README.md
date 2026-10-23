@@ -34,7 +34,7 @@ platform:
 
 | | Android (`package android`) | iOS (`package ios`) |
 |---|---|---|
-| start | `Start(configJson, fd, assetDir)` | `Start(configJson, flow, assetDir)` |
+| start | `Start(configJson, fd, assetDir, httpSocket)` | `Start(configJson, flow, assetDir)` |
 | stop | `Stop()` | `Stop()` |
 | device | the TUN file descriptor `fd` | a `PacketFlow` (`ReadPacket`, `WritePacket`) |
 
@@ -55,8 +55,13 @@ What to rely on:
   `SetVerboseLogs(true)` (debug builds, before `Start`) adds the info lines.
 - **Memory.** `QueryMemory` is cheap and can be polled; `FreeMemory` runs a GC and gives pages back, off the main
   thread. On iOS the extension lives under a limit of about 50 MB, see below.
-- **Local proxy (Android).** `LocalHTTPProxy()` returns the loopback HTTP proxy of the session for the app's own
-  requests (the app is kept out of the tunnel). It carries the password: never log it.
+- **No listening ports.** A session opens no TCP port, not even on loopback: the loopback is shared by every app on
+  the phone, and a port that answers a probe (SOCKS `05 ff`, HTTP `407`) gives the client away whatever the
+  password. The tunnel reaches xray inside the process (`core/bridge.go`).
+- **Local proxy (Android).** The app is kept out of the tunnel, so its own requests need a proxy. `httpSocket`, a
+  path the app can write to (short: about 100 bytes at most), makes the core serve an HTTP proxy on that Unix
+  socket; `LocalHTTPProxy()` returns the socket and the password of the session. Pass an empty path for none.
+  The password must not be logged. A socket file left behind by a killed process is replaced.
 - **Debug commands.** `SetGCTuning`, `SetUDPTimeout`, `WriteHeapProfile`, `WriteGoroutineDump` refuse to run unless
   `SetVerboseLogs(true)` was called, i.e. in release builds.
 
@@ -68,14 +73,15 @@ anywhere but in the listed platform differences.
 Subscription providers send the xray config; the app passes it on as it is. `hardenConfig` (`core/localproxy.go`,
 `core/sanitize.go`) is where it stops being trusted:
 
-- the inbounds are replaced by a SOCKS and an HTTP one on loopback, random ports, a random password per session;
+- the inbounds are replaced: by none, or, if the app asked for a socket, by one HTTP proxy on that Unix socket
+  with a random password per session;
 - only the top-level blocks `outbounds`, `routing`, `dns`, `policy`, `stats` and `fakedns` pass, in any
   spelling of the key (the allowlist is in `core/sanitize.go`, with the reason each other block is left out);
 - inside the outbounds, `reverse` (the provider could make the phone dial out and then use it to reach the
   user's network) and the router port mapping of `finalmask` are removed.
 
-The tests start a real xray with the hostile configs and check that nothing listens, nothing is written and the
-environment is untouched. `фиксы.md` has the story of each rule.
+The tests start a real xray with the hostile configs and check that nothing listens (the OS is asked what the
+process listens on, `lsof`), nothing is written and the environment is untouched. `фиксы.md` has the story of each rule.
 
 ## Memory on iOS
 

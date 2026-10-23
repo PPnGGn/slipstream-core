@@ -79,7 +79,7 @@ func TestQueryTrafficDoesNotWaitForTheBuild(t *testing.T) {
 	t.Cleanup(func() { _ = stopXray() })
 
 	startDone := make(chan error, 1)
-	go func() { startDone <- startXray(hardenSample, "") }()
+	go func() { startDone <- startXray(hardenSample, "", "") }()
 	<-entered // StartXray is inside the build
 
 	polled := make(chan struct{})

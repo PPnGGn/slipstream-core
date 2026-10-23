@@ -22,7 +22,7 @@ import (
 // starts a real xray instance: what startXray does, minus the global state.
 func startHardened(t *testing.T, providerConfig string) {
 	t.Helper()
-	p, err := newProxyParams()
+	p, err := newProxyParams("")
 	if err != nil {
 		t.Fatalf("newProxyParams: %v", err)
 	}
@@ -108,7 +108,7 @@ func assertListenerBlockDropped(t *testing.T, name string, blockFor func(addr st
 // the JSON hardenConfig produces.
 func assertBlockRemovedFromOutput(t *testing.T, name string) {
 	t.Helper()
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	p := proxyParams{}
 	out, err := hardenConfig(withBlock(t, strings.ToUpper(name), `{}`), p, false)
 	if err != nil {
 		t.Fatalf("hardenConfig: %v", err)
@@ -171,7 +171,7 @@ func TestHardenConfigKeepsOnlyAllowedBlocks(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	p := proxyParams{}
 	out, err := hardenConfig(string(raw), p, false)
 	if err != nil {
 		t.Fatalf("hardenConfig: %v", err)
@@ -192,12 +192,42 @@ func TestHardenConfigKeepsOnlyAllowedBlocks(t *testing.T) {
 			t.Errorf("block %q survived hardenConfig", key)
 		}
 	}
-	// inbounds and log are ours, not the provider's.
-	if inbounds, _ := after["inbounds"].([]any); len(inbounds) != 2 {
-		t.Errorf("inbounds = %v, want our two", after["inbounds"])
+	// inbounds and log are ours, not the provider's. The sample has an inbound
+	// of its own; with no socket asked for, none is left.
+	if inbounds, ok := after["inbounds"].([]any); !ok || len(inbounds) != 0 {
+		t.Errorf("inbounds = %v, want an empty list", after["inbounds"])
 	}
 	if logCfg, _ := after["log"].(map[string]any); logCfg["loglevel"] != "warning" {
 		t.Errorf("log = %v, want ours", after["log"])
+	}
+}
+
+// The one inbound the core adds is the HTTP proxy of the app on a Unix socket:
+// no port, so nothing a scan of the loopback can find.
+func TestHardenConfigAddsOnlyTheSocketInbound(t *testing.T) {
+	p, err := newProxyParams("/tmp/x/h.sock")
+	if err != nil {
+		t.Fatalf("newProxyParams: %v", err)
+	}
+	out, err := hardenConfig(hardenSample, p, false)
+	if err != nil {
+		t.Fatalf("hardenConfig: %v", err)
+	}
+	var after struct {
+		Inbounds []map[string]any `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(out), &after); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if len(after.Inbounds) != 1 {
+		t.Fatalf("inbounds = %v, want just the HTTP proxy", after.Inbounds)
+	}
+	in := after.Inbounds[0]
+	if in["protocol"] != "http" || in["listen"] != "/tmp/x/h.sock" {
+		t.Errorf("inbound = %v, want http on the socket", in)
+	}
+	if _, hasPort := in["port"]; hasPort {
+		t.Errorf("inbound has a port: %v", in)
 	}
 }
 
@@ -255,7 +285,7 @@ func assertBlockNotBuilt(t *testing.T, name, blockJSON, protoType, assetDir stri
 	t.Helper()
 	for _, key := range []string{name, strings.ToUpper(name), strings.ToUpper(name[:1]) + name[1:]} {
 		t.Run(key, func(t *testing.T) {
-			p, err := newProxyParams()
+			p, err := newProxyParams("")
 			if err != nil {
 				t.Fatalf("newProxyParams: %v", err)
 			}
@@ -335,7 +365,7 @@ func TestHardenConfigDropsVlessReverse(t *testing.T) {
 		],
 		"routing": {"rules": [{"type": "field", "inboundTag": ["r"], "outboundTag": "direct"}]}
 	}`
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	p := proxyParams{}
 
 	// The key may be spelled in any case, see assertListenerBlockDropped.
 	for _, key := range []string{"reverse", "REVERSE", "Reverse"} {
@@ -412,7 +442,7 @@ func TestHardenConfigDropsRealmPortMapping(t *testing.T) {
 			{"protocol": "freedom", "tag": "direct"}
 		]
 	}`
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	p := proxyParams{}
 
 	for _, key := range []string{"portMapping", "PORTMAPPING", "Portmapping"} {
 		t.Run(key, func(t *testing.T) {
@@ -465,7 +495,7 @@ func TestBuildHardenedConfigLeavesEnvironmentAlone(t *testing.T) {
 	const canary = "SLIPSTREAM_TEST_CANARY"
 	t.Setenv(canary, "")
 
-	p, err := newProxyParams()
+	p, err := newProxyParams("")
 	if err != nil {
 		t.Fatalf("newProxyParams: %v", err)
 	}

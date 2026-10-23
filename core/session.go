@@ -29,9 +29,13 @@ var errSessionRunning = errors.New("a session is already running")
 // StartFd owns fd from the call on, and the caller must not close it, whatever
 // the result: on success the tunnel closes it when Stop runs, on failure
 // StartFd closes it. A failed start leaves nothing running.
-func StartFd(configJson string, fd int, assetDir string) error {
+//
+// httpSocket, if not empty, is the path of a Unix socket (in the app's private
+// directory) where an HTTP proxy for the app's own requests listens, see
+// ActiveHTTPProxy. With "" nothing listens at all.
+func StartFd(configJson string, fd int, assetDir string, httpSocket string) error {
 	handedOver := false // startTun owns the descriptor from its call on
-	err := startSession(configJson, assetDir, func() error {
+	err := startSession(configJson, assetDir, httpSocket, func() error {
 		handedOver = true
 		return startTun(fd)
 	})
@@ -44,7 +48,7 @@ func StartFd(configJson string, fd int, assetDir string) error {
 // StartIO starts a session whose tunnel reads and writes packets through rw
 // (iOS). A failed start leaves nothing running.
 func StartIO(configJson string, rw io.ReadWriter, assetDir string) error {
-	return startSession(configJson, assetDir, func() error {
+	return startSession(configJson, assetDir, "", func() error {
 		return startTunIO(rw)
 	})
 }
@@ -60,7 +64,7 @@ func Stop() (err error) {
 	return stopParts()
 }
 
-func startSession(configJson, assetDir string, startTun func() error) (err error) {
+func startSession(configJson, assetDir, httpSocket string, startTun func() error) (err error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
@@ -79,7 +83,7 @@ func startSession(configJson, assetDir string, startTun func() error) (err error
 		sessionRunning = err == nil
 	}()
 
-	if err = startXray(configJson, assetDir); err != nil {
+	if err = startXray(configJson, assetDir, httpSocket); err != nil {
 		return err
 	}
 	xrayUp = true

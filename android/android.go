@@ -59,8 +59,13 @@ func SetVerboseLogs(on bool) {
 // for as long as building the config takes (seconds with a large geo config),
 // so it does not belong on the main thread. A failed Start leaves nothing
 // running; a Start while a session runs is refused.
-func Start(configJson string, fd int, assetDir string) error {
-	return slipcore.StartFd(configJson, fd, assetDir)
+//
+// httpSocket is the path of a Unix socket in the app's private directory where
+// the HTTP proxy for the app's own requests listens (see LocalHTTPProxy), or ""
+// for none. The traffic of the tunnel needs no socket at all: nothing else
+// listens, so no other app on the phone can find a port to scan.
+func Start(configJson string, fd int, assetDir string, httpSocket string) error {
+	return slipcore.StartFd(configJson, fd, assetDir, httpSocket)
 }
 
 // Stop ends the session. Safe to call at any time and any number of times; if
@@ -177,22 +182,24 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
-// LocalProxy is the loopback HTTP proxy of the running session.
+// LocalProxy is the HTTP proxy of the running session, on a Unix socket.
 type LocalProxy struct {
-	Port int
-	User string
-	Pass string
+	Socket string
+	User   string
+	Pass   string
 }
 
 // LocalHTTPProxy returns the HTTP proxy the app should use for its own
-// requests while the tunnel is up, or nil when it is down. The app is excluded
-// from the tunnel, so this is its only way through it.
+// requests while the tunnel is up, or nil when it is down or Start was given no
+// socket. The app is excluded from the tunnel, so this is its only way through
+// it. Connect to the Unix socket and speak HTTP proxy to it, with the user and
+// password; a TCP address is not available, on purpose.
 //
 // Never log the result: it carries the proxy password.
 func LocalHTTPProxy() *LocalProxy {
-	port, user, pass, ok := slipcore.ActiveHTTPProxy()
+	socket, user, pass, ok := slipcore.ActiveHTTPProxy()
 	if !ok {
 		return nil
 	}
-	return &LocalProxy{Port: port, User: user, Pass: pass}
+	return &LocalProxy{Socket: socket, User: user, Pass: pass}
 }

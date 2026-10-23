@@ -8,9 +8,6 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/core/device/iobased"
 	"github.com/xjasonlyu/tun2socks/v2/core/option"
 	"github.com/xjasonlyu/tun2socks/v2/proxy"
-	// Registers the "socks5" scheme that proxy.Parse looks up. The engine
-	// package used to pull it in; without it Parse says "unknown protocol".
-	_ "github.com/xjasonlyu/tun2socks/v2/proxy/socks5"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel/statistic"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -57,18 +54,13 @@ func SetUDPTimeout(d time.Duration) error {
 }
 
 // startStack builds the network stack on link and hands every connection it
-// terminates to tun2socks' tunnel, which relays it to the local SOCKS inbound
-// of xray described by p.
+// terminates to tun2socks' tunnel, which relays it through px: the bridge to
+// xray (see xrayProxy).
 //
 // This is what tun2socks' engine package does after parsing its settings. The
 // engine is not used because it ends the whole process (log.Fatalf) when
-// anything fails, instead of returning an error, and because it prints the
-// proxy URL, password included, at info level.
-func startStack(link stack.LinkEndpoint, p proxyParams, opts ...option.Option) (*stack.Stack, error) {
-	px, err := proxy.Parse(socksProxyURL(p))
-	if err != nil {
-		return nil, fmt.Errorf("failed to build socks proxy: %w", err)
-	}
+// anything fails, instead of returning an error.
+func startStack(link stack.LinkEndpoint, px proxy.Proxy, opts ...option.Option) (*stack.Stack, error) {
 	tunnel.T().SetProxy(px)
 	tunnel.T().SetUDPTimeout(UDPTimeout())
 
@@ -126,7 +118,7 @@ func startTun(fd int) error {
 		closeTunFd(fd)
 		return fmt.Errorf("tun2socks is already running")
 	}
-	p, ok := activeProxyParams()
+	px, ok := liveProxy()
 	if !ok {
 		closeTunFd(fd)
 		return fmt.Errorf("start tun: xray is not running")
@@ -140,7 +132,7 @@ func startTun(fd int) error {
 		closeTunFd(fd)
 		return fmt.Errorf("failed to open the tun device: %w", err)
 	}
-	st, err := startStack(dev, p)
+	st, err := startStack(dev, px)
 	if err != nil {
 		dev.Close() // closes the descriptor with it
 		return err
@@ -202,7 +194,7 @@ func startTunIO(rw io.ReadWriter) error {
 		return fmt.Errorf("tun2socks is already running")
 	}
 
-	p, ok := activeProxyParams()
+	px, ok := liveProxy()
 	if !ok {
 		return fmt.Errorf("start tun: xray is not running")
 	}
@@ -212,7 +204,7 @@ func startTunIO(rw io.ReadWriter) error {
 		return fmt.Errorf("failed to create io endpoint: %w", err)
 	}
 
-	st, err := startStack(ep, p,
+	st, err := startStack(ep, px,
 		option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
 		option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
 	)

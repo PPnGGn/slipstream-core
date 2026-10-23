@@ -38,7 +38,11 @@ var buildXrayConfig = buildCoreConfig
 // mu guards only the xrayInst pointer and is never held while building or
 // starting: that takes seconds on a large geo config, and QueryTraffic, which
 // the app polls, needs mu. Callers are serialized by the session lock.
-func startXray(configJson string, assetDir string) error {
+//
+// httpSocket, if non-empty, is the path of a Unix socket for an HTTP proxy for the
+// app's own requests (see ActiveHTTPProxy); with "" xray has no inbound and
+// nothing listens at all.
+func startXray(configJson string, assetDir string, httpSocket string) error {
 	mu.Lock()
 	running := xrayInst != nil
 	mu.Unlock()
@@ -46,15 +50,19 @@ func startXray(configJson string, assetDir string) error {
 		return fmt.Errorf("xray is already running")
 	}
 
-	// Fresh ports and credentials for every session; the config's own inbounds
-	// are replaced so nothing listens without a password.
-	params, err := newProxyParams()
+	// Fresh credentials for every session; the config's own inbounds are
+	// replaced, so nothing listens but what we ask for.
+	params, err := newProxyParams(httpSocket)
 	if err != nil {
 		return err
 	}
 	hardened, err := hardenConfig(configJson, params, verboseLogs.Load())
 	if err != nil {
 		return err
+	}
+	if httpSocket != "" {
+		// A socket file left by a process that was killed would make the bind fail.
+		removeSocketFile(httpSocket)
 	}
 
 	coreConfig, err := buildXrayConfig(hardened, assetDir)
@@ -69,7 +77,7 @@ func startXray(configJson string, assetDir string) error {
 
 	if err := inst.Start(); err != nil {
 		// Start stops at the first failing feature and leaves the earlier ones
-		// running (e.g. the SOCKS listener when the HTTP port is taken).
+		// running.
 		_ = inst.Close()
 		return fmt.Errorf("failed to start xray: %w", err)
 	}
@@ -85,7 +93,7 @@ func startXray(configJson string, assetDir string) error {
 	xrayInst = inst
 	mu.Unlock()
 	// Published only once xray is really up: startTun reads it next.
-	setActiveProxy(params)
+	setLive(newXrayProxy(inst, bridgeUserLevel), params)
 	return nil
 }
 
@@ -141,7 +149,8 @@ func XrayVersion() string {
 // instance happens outside mu, for the same reason startXray does not hold it.
 func stopXray() error {
 	// Unconditional: the credentials must never outlive the session.
-	clearActiveProxy()
+	socket, _, _, hadSocket := ActiveHTTPProxy()
+	clearLive()
 
 	mu.Lock()
 	inst := xrayInst
@@ -151,7 +160,19 @@ func stopXray() error {
 	if inst == nil {
 		return nil
 	}
-	return inst.Close()
+	err := inst.Close()
+	if hadSocket {
+		removeSocketFile(socket) // closing the listener leaves the file behind
+	}
+	return err
+}
+
+// removeSocketFile deletes path if it is a socket and does nothing otherwise:
+// the path comes from the app, and a wrong one must not cost the user a file.
+func removeSocketFile(path string) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().Type() == os.ModeSocket {
+		_ = os.Remove(path)
+	}
 }
 
 // QueryTraffic returns the bytes sent and received through the outbound tagged

@@ -3,54 +3,11 @@ package core
 import (
 	"encoding/hex"
 	"encoding/json"
-	"net"
-	"net/url"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 
 	"go.uber.org/zap/zapcore"
 )
-
-func TestFreePort(t *testing.T) {
-	port, err := freePort()
-	if err != nil {
-		t.Fatalf("freePort() error: %v", err)
-	}
-	if port < 1 || port > 65535 {
-		t.Fatalf("freePort() = %d, want a valid TCP port", port)
-	}
-
-	// The port must really be free: we can bind it right away.
-	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatalf("port %d returned by freePort() is not bindable: %v", port, err)
-	}
-	l.Close()
-}
-
-func TestFreePortDiffersWhileHeld(t *testing.T) {
-	first, err := freePort()
-	if err != nil {
-		t.Fatalf("freePort() error: %v", err)
-	}
-
-	// Hold the first port; the OS must not hand it out again.
-	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(first)))
-	if err != nil {
-		t.Fatalf("cannot hold port %d: %v", first, err)
-	}
-	defer l.Close()
-
-	second, err := freePort()
-	if err != nil {
-		t.Fatalf("freePort() error: %v", err)
-	}
-	if second == first {
-		t.Fatalf("freePort() returned the busy port %d again", first)
-	}
-}
 
 func TestRandHexLength(t *testing.T) {
 	for _, n := range []int{1, 8, 16, 32} {
@@ -91,34 +48,44 @@ func TestRandHexInvalidLength(t *testing.T) {
 }
 
 func TestNewProxyParams(t *testing.T) {
-	p, err := newProxyParams()
+	none, err := newProxyParams("")
 	if err != nil {
-		t.Fatalf("newProxyParams() error: %v", err)
+		t.Fatalf("newProxyParams(\"\") error: %v", err)
 	}
-	if p.socksPort == p.httpPort {
-		t.Errorf("socks and http share port %d", p.socksPort)
-	}
-	if p.socksPort < 1 || p.httpPort < 1 {
-		t.Errorf("invalid ports: socks=%d http=%d", p.socksPort, p.httpPort)
-	}
-	if len(p.user) != 16 || len(p.pass) != 32 {
-		t.Errorf("credential lengths: user=%d pass=%d, want 16 and 32", len(p.user), len(p.pass))
+	if none != (proxyParams{}) {
+		t.Errorf("without a socket the parameters are %+v, want none: nothing needs a password", none)
 	}
 
-	other, err := newProxyParams()
+	p, err := newProxyParams("/tmp/x.sock")
 	if err != nil {
-		t.Fatalf("newProxyParams() error: %v", err)
+		t.Fatalf("newProxyParams error: %v", err)
+	}
+	if p.httpSocket != "/tmp/x.sock" || len(p.user) != 16 || len(p.pass) != 32 {
+		t.Errorf("params = %+v, want the socket, a 16 and a 32 character credential", p)
+	}
+	other, err := newProxyParams("/tmp/x.sock")
+	if err != nil {
+		t.Fatalf("newProxyParams error: %v", err)
 	}
 	if p.pass == other.pass {
 		t.Errorf("two sessions got the same password")
 	}
 }
 
+// Nothing listens by default: the traffic of the tunnel goes through the
+// bridge, and the only inbound there can be is the HTTP proxy on a Unix socket
+// the app asked for.
 func TestLocalInbounds(t *testing.T) {
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
+	if got := localInbounds(proxyParams{}); len(got) != 0 {
+		t.Errorf("localInbounds without a socket = %v, want none", got)
+	}
+	// JSON must say [], not null: xray reads the inbounds as a list.
+	raw, _ := json.Marshal(localInbounds(proxyParams{}))
+	if string(raw) != "[]" {
+		t.Errorf("no inbounds encode as %s, want []", raw)
+	}
 
-	// Round-trip through JSON: this is what xray will actually see, and it
-	// turns every number into float64.
+	p := proxyParams{httpSocket: "/data/app/x.sock", user: "u", pass: "p"}
 	raw, err := json.Marshal(localInbounds(p))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -127,51 +94,23 @@ func TestLocalInbounds(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d inbounds, want 2", len(got))
+	if len(got) != 1 {
+		t.Fatalf("got %d inbounds, want 1", len(got))
 	}
-
-	socks, httpIn := got[0], got[1]
-	for _, c := range []struct {
-		name string
-		in   map[string]any
-		tag  string
-		port float64
-	}{
-		{"socks", socks, "socks", 1111},
-		{"http", httpIn, "http", 2222},
-	} {
-		if c.in["tag"] != c.tag || c.in["protocol"] != c.tag {
-			t.Errorf("%s: tag/protocol = %v/%v", c.name, c.in["tag"], c.in["protocol"])
-		}
-		if c.in["listen"] != "127.0.0.1" {
-			t.Errorf("%s: listen = %v, want 127.0.0.1", c.name, c.in["listen"])
-		}
-		if c.in["port"] != c.port {
-			t.Errorf("%s: port = %v, want %v", c.name, c.in["port"], c.port)
-		}
-
-		settings, ok := c.in["settings"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s: settings is not an object", c.name)
-		}
-		accounts, ok := settings["accounts"].([]any)
-		if !ok || len(accounts) != 1 {
-			t.Fatalf("%s: accounts = %v, want one entry", c.name, settings["accounts"])
-		}
-		acc, _ := accounts[0].(map[string]any)
-		if acc["user"] != "u" || acc["pass"] != "p" {
-			t.Errorf("%s: account = %v", c.name, acc)
-		}
+	in := got[0]
+	if in["tag"] != "http" || in["protocol"] != "http" || in["listen"] != "/data/app/x.sock" {
+		t.Errorf("inbound = %v, want the http one on the socket", in)
 	}
-
-	socksSettings := socks["settings"].(map[string]any)
-	if socksSettings["auth"] != "password" || socksSettings["udp"] != true {
-		t.Errorf("socks settings = %v", socksSettings)
+	if _, hasPort := in["port"]; hasPort {
+		t.Errorf("a Unix socket inbound has a port: %v", in)
 	}
-	sniffing := socks["sniffing"].(map[string]any)
-	if sniffing["enabled"] != true || sniffing["routeOnly"] != true {
-		t.Errorf("socks sniffing = %v", sniffing)
+	settings := in["settings"].(map[string]any)
+	accounts, _ := settings["accounts"].([]any)
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %v, want one entry", settings["accounts"])
+	}
+	if acc := accounts[0].(map[string]any); acc["user"] != "u" || acc["pass"] != "p" {
+		t.Errorf("account = %v", acc)
 	}
 }
 
@@ -193,9 +132,7 @@ const hardenSample = `{
 }`
 
 func TestHardenConfig(t *testing.T) {
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
-
-	out, err := hardenConfig(hardenSample, p, false)
+	out, err := hardenConfig(hardenSample, proxyParams{}, false)
 	if err != nil {
 		t.Fatalf("hardenConfig error: %v", err)
 	}
@@ -220,19 +157,10 @@ func TestHardenConfig(t *testing.T) {
 		t.Errorf("remarks survived hardenConfig")
 	}
 
-	// Old inbounds are gone, ours are in.
+	// The provider's inbound is gone and nothing replaces it: no inbound, no port.
 	inbounds, ok := after["inbounds"].([]any)
-	if !ok || len(inbounds) != 2 {
-		t.Fatalf("inbounds = %v, want exactly 2", after["inbounds"])
-	}
-	for _, in := range inbounds {
-		m := in.(map[string]any)
-		if m["listen"] != "127.0.0.1" {
-			t.Errorf("inbound %v listens on %v", m["tag"], m["listen"])
-		}
-		if m["tag"] == "old-socks" {
-			t.Errorf("old inbound survived")
-		}
+	if !ok || len(inbounds) != 0 {
+		t.Fatalf("inbounds = %v, want an empty list", after["inbounds"])
 	}
 
 	// Log is replaced.
@@ -242,98 +170,94 @@ func TestHardenConfig(t *testing.T) {
 	}
 }
 
+func TestHardenConfigWithHTTPSocket(t *testing.T) {
+	p := proxyParams{httpSocket: "/data/app/x.sock", user: "u", pass: "p"}
+	out, err := hardenConfig(hardenSample, p, false)
+	if err != nil {
+		t.Fatalf("hardenConfig error: %v", err)
+	}
+	var after map[string]any
+	if err := json.Unmarshal([]byte(out), &after); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	inbounds, _ := after["inbounds"].([]any)
+	if len(inbounds) != 1 {
+		t.Fatalf("inbounds = %v, want exactly the HTTP one", after["inbounds"])
+	}
+	in := inbounds[0].(map[string]any)
+	if in["tag"] != "http" || in["listen"] != "/data/app/x.sock" || in["tag"] == "old-socks" {
+		t.Errorf("inbound = %v", in)
+	}
+}
+
 func TestHardenConfigInvalidInput(t *testing.T) {
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
 	for _, in := range []string{"", "not json", "[]", "null", `"text"`} {
-		if out, err := hardenConfig(in, p, false); err == nil {
+		if out, err := hardenConfig(in, proxyParams{}, false); err == nil {
 			t.Errorf("hardenConfig(%q) = %q, want an error", in, out)
 		}
 	}
 }
 
 func TestHardenConfigBuilds(t *testing.T) {
-	p, err := newProxyParams()
-	if err != nil {
-		t.Fatalf("newProxyParams: %v", err)
-	}
-	out, err := hardenConfig(hardenSample, p, false)
-	if err != nil {
-		t.Fatalf("hardenConfig: %v", err)
-	}
-	// xray itself must accept the result (no geo refs, so no asset dir needed).
-	if _, err := buildCoreConfig(out, ""); err != nil {
-		t.Fatalf("buildCoreConfig rejected the hardened config: %v", err)
-	}
-}
-
-func TestActiveProxy(t *testing.T) {
-	t.Cleanup(clearActiveProxy) // do not leak state into other tests
-
-	clearActiveProxy()
-	if _, ok := activeProxyParams(); ok {
-		t.Fatalf("activeProxyParams() reported a session before any was set")
-	}
-
-	want := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
-	setActiveProxy(want)
-	got, ok := activeProxyParams()
-	if !ok || got != want {
-		t.Fatalf("activeProxyParams() = %+v, %v; want %+v, true", got, ok, want)
-	}
-
-	// The caller gets a copy: changing it must not touch the stored value.
-	got.pass = "changed"
-	again, _ := activeProxyParams()
-	if again.pass != "p" {
-		t.Errorf("stored password was modified through the returned copy")
-	}
-
-	clearActiveProxy()
-	if _, ok := activeProxyParams(); ok {
-		t.Errorf("activeProxyParams() still reports a session after clearActiveProxy()")
+	for _, socket := range []string{"", "/tmp/slipstream-test.sock"} {
+		p, err := newProxyParams(socket)
+		if err != nil {
+			t.Fatalf("newProxyParams: %v", err)
+		}
+		out, err := hardenConfig(hardenSample, p, false)
+		if err != nil {
+			t.Fatalf("hardenConfig: %v", err)
+		}
+		// xray itself must accept the result (no geo refs, so no asset dir needed).
+		if _, err := buildCoreConfig(out, ""); err != nil {
+			t.Fatalf("socket %q: buildCoreConfig rejected the hardened config: %v", socket, err)
+		}
 	}
 }
 
-func TestSocksProxyURL(t *testing.T) {
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
-	if got, want := socksProxyURL(p).String(), "socks5://u:p@127.0.0.1:1111"; got != want {
-		t.Errorf("socksProxyURL = %q, want %q", got, want)
+func TestLiveProxy(t *testing.T) {
+	t.Cleanup(clearLive) // do not leak state into other tests
+
+	clearLive()
+	if _, ok := liveProxy(); ok {
+		t.Fatalf("liveProxy() reported a bridge before any was set")
 	}
 
-	// Characters that would corrupt a hand-built URL must survive a round trip.
-	p.pass = "p@ss:/?#"
-	parsed, err := url.Parse(socksProxyURL(p).String())
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	setLive(fakeProxy{}, proxyParams{})
+	if _, ok := liveProxy(); !ok {
+		t.Fatalf("liveProxy() reports no bridge after setLive")
 	}
-	if pass, _ := parsed.User.Password(); pass != p.pass {
-		t.Errorf("password after round trip = %q, want %q", pass, p.pass)
+	if _, _, _, ok := ActiveHTTPProxy(); ok {
+		t.Errorf("ActiveHTTPProxy() reported a proxy for a session without a socket")
 	}
-	if parsed.Host != "127.0.0.1:1111" {
-		t.Errorf("host = %q", parsed.Host)
-	}
-	if strings.Contains(socksProxyURL(p).Redacted(), p.pass) {
-		t.Errorf("Redacted() leaks the password")
+
+	clearLive()
+	if _, ok := liveProxy(); ok {
+		t.Errorf("liveProxy() still reports a bridge after clearLive()")
 	}
 }
 
 func TestActiveHTTPProxy(t *testing.T) {
-	t.Cleanup(clearActiveProxy)
+	t.Cleanup(clearLive)
 
-	clearActiveProxy()
+	clearLive()
 	if _, _, _, ok := ActiveHTTPProxy(); ok {
 		t.Fatalf("ActiveHTTPProxy() reported a proxy with no session")
 	}
 
-	setActiveProxy(proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"})
-	port, user, pass, ok := ActiveHTTPProxy()
-	if !ok || port != 2222 || user != "u" || pass != "p" {
-		t.Errorf("ActiveHTTPProxy() = %d, %q, %q, %v; want the http port and credentials", port, user, pass, ok)
+	setLive(fakeProxy{}, proxyParams{httpSocket: "/data/app/x.sock", user: "u", pass: "p"})
+	socket, user, pass, ok := ActiveHTTPProxy()
+	if !ok || socket != "/data/app/x.sock" || user != "u" || pass != "p" {
+		t.Errorf("ActiveHTTPProxy() = %q, %q, %q, %v; want the socket and credentials", socket, user, pass, ok)
+	}
+
+	clearLive()
+	if _, _, _, ok := ActiveHTTPProxy(); ok {
+		t.Errorf("the credentials outlived the session")
 	}
 }
 
 func TestHardenConfigVerboseLog(t *testing.T) {
-	p := proxyParams{socksPort: 1111, httpPort: 2222, user: "u", pass: "p"}
 	for _, c := range []struct {
 		verbose   bool
 		level     string
@@ -342,7 +266,7 @@ func TestHardenConfigVerboseLog(t *testing.T) {
 		{verbose: false, level: "warning", accessOff: true},
 		{verbose: true, level: "info", accessOff: false},
 	} {
-		out, err := hardenConfig(hardenSample, p, c.verbose)
+		out, err := hardenConfig(hardenSample, proxyParams{}, c.verbose)
 		if err != nil {
 			t.Fatalf("verbose=%v: %v", c.verbose, err)
 		}

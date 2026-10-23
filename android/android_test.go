@@ -70,7 +70,7 @@ func TestStartClosesTunFdOnFailure(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			fd := tunFdLike(t)
 
-			if err := Start(config, fd, ""); err == nil {
+			if err := Start(config, fd, "", ""); err == nil {
 				t.Fatal("Start() succeeded with a broken config")
 			}
 			if fdOpen(fd) {
