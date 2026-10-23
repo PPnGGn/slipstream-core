@@ -96,6 +96,22 @@ Subscription providers send the xray config; the app passes it on as it is. `har
 The tests start a real xray with the hostile configs and check that nothing listens (the OS is asked what the
 process listens on, `lsof`), nothing is written and the environment is untouched.
 
+What the config still decides, on purpose: which servers the traffic goes to, and the routing rules, so a provider
+can send some or all of it direct (a rule from the tunnel's traffic to `direct` leaves the VPN, and an app that
+bypasses a country does exactly that). The core cannot tell such a rule of a provider from one the user wants,
+and the provider is the one who carries the traffic anyway. DNS servers and policy levels are the provider's too.
+What the core takes away is what would reach the phone or its network rather than the traffic: listeners, files,
+the environment, the router.
+
+## Dependencies
+
+xray-core and tun2socks are pinned to commits (pseudo-versions in `go.mod`), because the releases lag behind what
+the client needs. The pin of xray-core must be the one of the rules repository, whose trimmed geo files are only
+guaranteed to load in that version (`make check-xray-pin`, before a release). To move a pin: `go get`, `go mod
+tidy`, `make check`, and a connect on a phone. The link flag `-checklinkname=0` applies to the whole binary:
+xray's `anet` uses `//go:linkname` against the standard library, which Go refuses at link time otherwise (see the
+`Makefile`), so a new Go release may need a new look at it.
+
 ## Memory on iOS
 
 The Network Extension is killed above about 50 MB. What the core does about it: the UDP sessions relay with 8 KB
