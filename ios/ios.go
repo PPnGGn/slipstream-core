@@ -130,6 +130,37 @@ func QueryMemory() *MemoryStats {
 	return &m
 }
 
+// SetGCTuning changes the GC settings at once: percent is GOGC (> 0), limitMB
+// a soft memory limit in MB (0 = none). For measuring memory under the
+// extension's limit on a live session. Debug builds only: it refuses to run
+// unless SetVerboseLogs(true) was called.
+func SetGCTuning(percent int, limitMB int) error {
+	if err := slipcore.RequireDebug(); err != nil {
+		return err
+	}
+	return slipcore.SetGCTuning(percent, int64(limitMB)<<20)
+}
+
+// WriteHeapProfile writes the core's heap profile into dir as
+// heap[-name].pprof and returns the path; read it with `go tool pprof -top`.
+// Debug builds only, with the same refusal as SetGCTuning.
+func WriteHeapProfile(dir string, name string) (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return slipcore.WriteHeapProfile(dir, name)
+}
+
+// WriteGoroutineDump writes every goroutine's stack into dir as
+// goroutines[-name].txt and returns the path. Debug builds only, with the same
+// refusal as SetGCTuning.
+func WriteGoroutineDump(dir string, name string) (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return slipcore.WriteGoroutineDump(dir, name)
+}
+
 func FreeMemory() {
 	slipcore.FreeMemory()
 }

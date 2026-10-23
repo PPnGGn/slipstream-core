@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 
 	xraylog "github.com/xtls/xray-core/common/log"
@@ -33,6 +34,19 @@ func forwarded(t *testing.T, verbose bool) []string {
 	}
 	f.Handle(&xraylog.AccessMessage{From: "a", To: "b", Status: xraylog.AccessAccepted})
 	return capture.levels
+}
+
+func TestRequireDebug(t *testing.T) {
+	t.Cleanup(func() { SetVerboseLogs(false) })
+
+	SetVerboseLogs(false)
+	if err := RequireDebug(); !errors.Is(err, ErrDebugOnly) {
+		t.Errorf("RequireDebug() in a release build = %v, want ErrDebugOnly", err)
+	}
+	SetVerboseLogs(true)
+	if err := RequireDebug(); err != nil {
+		t.Errorf("RequireDebug() in a debug build = %v, want nil", err)
+	}
 }
 
 func TestXrayForwarderFiltersRelease(t *testing.T) {

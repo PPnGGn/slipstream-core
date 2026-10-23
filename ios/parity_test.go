@@ -55,11 +55,9 @@ func TestAndroidAndIosExposeTheSameAPI(t *testing.T) {
 	iosFuncs, iosTypes := exported(t, "ios.go")
 
 	androidOnly := map[string]string{
-		// The memory and GC debugging commands are driven by an adb broadcast.
-		"SetMemoryLog":       "adb debug command",
-		"SetGCTuning":        "adb debug command",
-		"WriteHeapProfile":   "adb debug command",
-		"WriteGoroutineDump": "adb debug command",
+		// The "mem:" line goes to Go's log, which gomobile points at logcat; on
+		// iOS the debug build of the app samples QueryMemory itself.
+		"SetMemoryLog": "logcat line",
 		// The Android app shares the process with the VPN service and is kept
 		// out of the tunnel; the iOS app is not and runs in another process.
 		"LocalHTTPProxy": "the iOS app is not excluded from the tunnel",

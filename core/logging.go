@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	tunlog "github.com/xjasonlyu/tun2socks/v2/log"
 	xraylog "github.com/xtls/xray-core/common/log"
 	"go.uber.org/zap"
@@ -48,6 +49,20 @@ func SetVerboseLogs(on bool) { verboseLogs.Store(on) }
 
 // VerboseLogs reports whether this is a debug build, see SetVerboseLogs.
 func VerboseLogs() bool { return verboseLogs.Load() }
+
+// ErrDebugOnly is what the debug commands return in a release build.
+var ErrDebugOnly = errors.New("debug builds only: SetVerboseLogs(true) was not called")
+
+// RequireDebug is the gate of the debug commands (heap profile, goroutine
+// dump, GC tuning): nil in a debug build, ErrDebugOnly otherwise. The apps
+// register their debug entry points only when they are debuggable; this keeps
+// the core from relying on that alone.
+func RequireDebug() error {
+	if !verboseLogs.Load() {
+		return ErrDebugOnly
+	}
+	return nil
+}
 
 func InstallLogForwarding() {
 	xraylog.RegisterHandler(&xrayLogForwarder{})

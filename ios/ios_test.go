@@ -3,6 +3,7 @@ package ios
 import (
 	"errors"
 	"math"
+	"os"
 	"testing"
 
 	slipcore "slipstream-core/core"
@@ -30,6 +31,53 @@ func (f *scriptedFlow) WritePacket(p []byte) error {
 }
 
 const mtu = 1500
+
+// The debug commands exist for the debug build of the app, which sets
+// SetVerboseLogs(true). In a release build the core refuses them: they write
+// files into a directory the caller names and change the GC of the process.
+func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
+	slipcore.SetVerboseLogs(false)
+	dir := t.TempDir()
+
+	if path, err := WriteHeapProfile(dir, "x"); err == nil {
+		t.Errorf("WriteHeapProfile() = %q in a release build, want an error", path)
+	}
+	if path, err := WriteGoroutineDump(dir, "x"); err == nil {
+		t.Errorf("WriteGoroutineDump() = %q in a release build, want an error", path)
+	}
+	if err := SetGCTuning(50, 0); err == nil {
+		t.Error("SetGCTuning() succeeded in a release build, want an error")
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Errorf("release build left %d files in the dump directory", len(left))
+	}
+	if got := slipcore.ReadMemorySnapshot().GCPercent; got != 20 {
+		t.Errorf("gogc = %d after a refused SetGCTuning, want 20", got)
+	}
+}
+
+func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
+	slipcore.SetVerboseLogs(true)
+	t.Cleanup(func() {
+		slipcore.SetVerboseLogs(false)
+		_ = slipcore.SetGCTuning(20, 0)
+	})
+	dir := t.TempDir()
+
+	if _, err := WriteHeapProfile(dir, "x"); err != nil {
+		t.Errorf("WriteHeapProfile() in a debug build: %v", err)
+	}
+	if _, err := WriteGoroutineDump(dir, "x"); err != nil {
+		t.Errorf("WriteGoroutineDump() in a debug build: %v", err)
+	}
+	if err := SetGCTuning(50, 40); err != nil {
+		t.Errorf("SetGCTuning() in a debug build: %v", err)
+	}
+	s := slipcore.ReadMemorySnapshot()
+	if s.GCPercent != 50 || s.MemoryLimitBytes != 40<<20 {
+		t.Errorf("gogc = %d, limit = %d after SetGCTuning(50, 40); want 50 and 40 MB", s.GCPercent, s.MemoryLimitBytes)
+	}
+}
 
 func TestQueryMemory(t *testing.T) {
 	m := QueryMemory()
