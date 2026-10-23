@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Vulnerabilities are published without any change in this repository.
+    - cron: "17 5 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # go.mod says go 1.27.3: the fixes of the standard library we depend on.
+          go-version-file: go.mod
+      # gofmt, vet, tests under the race detector, govulncheck, staticcheck.
+      - run: make check

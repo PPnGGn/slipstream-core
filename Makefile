@@ -29,7 +29,29 @@ IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
 LDFLAGS := -checklinkname=0 -s -w
 ANDROID_TARGETS := android
 
-.PHONY: bind bind-android bind-ios build vet tidy check-xray-pin
+.PHONY: bind bind-android bind-ios build vet tidy check check-fmt test vuln lint check-xray-pin
+
+# `make check` is what CI runs: formatting, vet, the tests under the race
+# detector, known vulnerabilities reachable from our code, and staticcheck. The
+# two analysers run from pinned versions through `go run`, so nothing has to be
+# installed and a new release of either cannot turn the build red by itself.
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
+
+check: check-fmt vet test vuln lint
+
+check-fmt:
+	@unformatted="$$(gofmt -l .)"; \
+	if [ -n "$$unformatted" ]; then echo "gofmt needs to be run on:"; echo "$$unformatted"; exit 1; fi
+
+test:
+	go test -race ./...
+
+vuln:
+	go run $(GOVULNCHECK) ./...
+
+lint:
+	go run $(STATICCHECK) ./...
 
 bind: bind-android bind-ios
 
@@ -66,6 +88,10 @@ tidy:
 # folder is named slipstream-georules, override with RULES_DIR=... if yours differs.
 RULES_DIR ?= ../slipstream-georules
 check-xray-pin:
+	@if [ ! -f "$(RULES_DIR)/go.mod" ]; then \
+		echo "check-xray-pin: no go.mod in RULES_DIR=$(RULES_DIR)"; \
+		echo "check out slipstream-rules next to this repo or pass RULES_DIR=<path>"; exit 1; \
+	fi
 	@here=$$(grep -E '^\s+github.com/xtls/xray-core ' go.mod | awk '{print $$2}'); \
 	there=$$(grep -E '^\s+github.com/xtls/xray-core ' $(RULES_DIR)/go.mod | awk '{print $$2}'); \
 	if [ -z "$$here" ] || [ -z "$$there" ]; then \
