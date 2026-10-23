@@ -3,16 +3,21 @@ package core
 import (
 	"fmt"
 	t2score "github.com/xjasonlyu/tun2socks/v2/core"
+	"github.com/xjasonlyu/tun2socks/v2/core/device"
+	"github.com/xjasonlyu/tun2socks/v2/core/device/fdbased"
 	"github.com/xjasonlyu/tun2socks/v2/core/device/iobased"
 	"github.com/xjasonlyu/tun2socks/v2/core/option"
-	"github.com/xjasonlyu/tun2socks/v2/engine"
 	"github.com/xjasonlyu/tun2socks/v2/proxy"
+	// Registers the "socks5" scheme that proxy.Parse looks up. The engine
+	// package used to pull it in; without it Parse says "unknown protocol".
+	_ "github.com/xjasonlyu/tun2socks/v2/proxy/socks5"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel"
 	"github.com/xjasonlyu/tun2socks/v2/tunnel/statistic"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"io"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -26,7 +31,53 @@ const (
 	tcpBufferMax     = 1 << 20
 )
 
+// startStack builds the network stack on link and hands every connection it
+// terminates to tun2socks' tunnel, which relays it to the local SOCKS inbound
+// of xray described by p.
+//
+// This is what tun2socks' engine package does after parsing its settings. The
+// engine is not used because it ends the whole process (log.Fatalf) when
+// anything fails, instead of returning an error, and because it prints the
+// proxy URL, password included, at info level.
+func startStack(link stack.LinkEndpoint, p proxyParams, opts ...option.Option) (*stack.Stack, error) {
+	px, err := proxy.Parse(socksProxyURL(p))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build socks proxy: %w", err)
+	}
+	tunnel.T().SetProxy(px)
+
+	st, err := t2score.CreateStack(&t2score.Config{
+		LinkEndpoint:     link,
+		TransportHandler: tunnel.T(),
+		Options:          opts,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create netstack: %w", err)
+	}
+	return st, nil
+}
+
 // --- fd-based path (Android) -------------------------------------------------
+
+type fdTunnel struct {
+	device device.Device
+	stack  *stack.Stack
+}
+
+// openTunDevice wraps the TUN descriptor fd in a packet device. Offset 0:
+// Android's TUN descriptor carries bare IP packets. A variable only so that
+// tests can replace it: on non-Linux systems tun2socks wraps the descriptor in
+// an os.File that is also closed by its finalizer, after the device has closed
+// the raw descriptor, which can close a descriptor some other code has opened
+// since. Linux, the only system the fd path runs on, uses a plain endpoint.
+var openTunDevice = func(fd int) (device.Device, error) {
+	return fdbased.Open(strconv.Itoa(fd), defaultMTU, 0)
+}
+
+var (
+	fdMu     sync.Mutex
+	fdActive *fdTunnel
+)
 
 // CloseTunFd closes a TUN descriptor that never reached StartTun. The app
 // detaches the descriptor from its ParcelFileDescriptor before handing it
@@ -38,31 +89,59 @@ func CloseTunFd(fd int) {
 }
 
 // StartTun starts tun2socks on the TUN descriptor fd and takes ownership of
-// it: on success tun2socks closes it with the device, and when StartTun
-// refuses to start it closes it itself.
+// it: on success the device closes it when StopTun runs, and when StartTun
+// refuses to start, or fails, it closes it itself. It returns an error when a
+// tunnel is already running, xray is not, or the stack cannot be built.
 func StartTun(fd int) error {
+	fdMu.Lock()
+	defer fdMu.Unlock()
+
+	if fdActive != nil {
+		CloseTunFd(fd)
+		return fmt.Errorf("tun2socks is already running")
+	}
 	p, ok := activeProxyParams()
 	if !ok {
 		CloseTunFd(fd)
 		return fmt.Errorf("start tun: xray is not running")
 	}
+	if fd < 0 {
+		return fmt.Errorf("start tun: invalid descriptor %d", fd)
+	}
 
-	engine.Insert(&engine.Key{
-		Proxy:  socksProxyURL(p).String(),
-		Device: fmt.Sprintf("fd://%d", fd),
-		// Not "info": engine logs "[STACK] device <-> proxy" with the full proxy URL,
-		// which will carry the SOCKS password.
-		LogLevel: "warn",
-	})
-	engine.Start()
+	dev, err := openTunDevice(fd)
+	if err != nil {
+		CloseTunFd(fd)
+		return fmt.Errorf("failed to open the tun device: %w", err)
+	}
+	st, err := startStack(dev, p)
+	if err != nil {
+		dev.Close() // closes the descriptor with it
+		return err
+	}
+	fdActive = &fdTunnel{device: dev, stack: st}
 
 	InstallLogForwarding()
 
 	return nil
 }
 
+// StopTun stops the tunnel StartTun started, closing the TUN descriptor, and
+// closes the connections still relayed through it. It is safe to call when
+// none runs.
 func StopTun() {
-	engine.Stop()
+	fdMu.Lock()
+	active := fdActive
+	fdActive = nil
+	fdMu.Unlock()
+
+	if active != nil {
+		active.device.Close()
+		active.stack.Close()
+		// The app calls this on its main thread: a read that does not return
+		// after the descriptor is closed must not hold it up.
+		waitWithTimeout("StopTun", active.stack.Wait, 2*time.Second)
+	}
 	closeRelayedConns()
 }
 
@@ -101,29 +180,19 @@ func StartTunIO(rw io.ReadWriter) error {
 	if !ok {
 		return fmt.Errorf("start tun: xray is not running")
 	}
-	px, err := proxy.Parse(socksProxyURL(p))
-	if err != nil {
-		return fmt.Errorf("failed to build socks proxy: %w", err)
-	}
-	tunnel.T().SetProxy(px)
-	tunnel.T().ProcessAsync()
 
 	ep, err := iobased.New(rw, defaultMTU, 0)
 	if err != nil {
 		return fmt.Errorf("failed to create io endpoint: %w", err)
 	}
 
-	st, err := t2score.CreateStack(&t2score.Config{
-		LinkEndpoint:     ep,
-		TransportHandler: tunnel.T(),
-		Options: []option.Option{
-			option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
-			option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
-		},
-	})
+	st, err := startStack(ep, p,
+		option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+		option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+	)
 	if err != nil {
 		ep.Close()
-		return fmt.Errorf("failed to create netstack: %w", err)
+		return err
 	}
 
 	ioActive = &ioTunnel{endpoint: ep, stack: st}
@@ -145,12 +214,14 @@ func StopTunIO() {
 
 	active.stack.Close()
 	active.endpoint.Close()
-	waitWithTimeout(active.endpoint.Wait, 2*time.Second)
-	waitWithTimeout(active.stack.Wait, 2*time.Second)
+	waitWithTimeout("StopTunIO", active.endpoint.Wait, 2*time.Second)
+	waitWithTimeout("StopTunIO", active.stack.Wait, 2*time.Second)
 	closeRelayedConns()
 }
 
-func waitWithTimeout(wait func(), timeout time.Duration) {
+// waitWithTimeout runs wait and gives up after timeout, logging that what did
+// not finish. The goroutine that runs wait is left behind in that case.
+func waitWithTimeout(what string, wait func(), timeout time.Duration) {
 	done := make(chan struct{})
 	go func() {
 		wait()
@@ -159,7 +230,7 @@ func waitWithTimeout(wait func(), timeout time.Duration) {
 	select {
 	case <-done:
 	case <-time.After(timeout):
-		LogError("StopTunIO: wait timed out; read side likely still blocked", "iobridge")
+		LogError(what+": wait timed out; read side likely still blocked", "iobridge")
 	}
 }
 
