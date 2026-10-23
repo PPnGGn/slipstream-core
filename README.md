@@ -10,7 +10,6 @@ core/      the code shared by the platforms: session, xray, tunnel, UDP relay, c
 android/   the Go package bound to Kotlin (AAR); the tunnel is a TUN file descriptor
 ios/       the Go package bound to Swift (xcframework); the tunnel is a packet flow
 desktop/   a placeholder, not bound
-фиксы.md   what was wrong, why it was dangerous, how it was fixed and measured (in Russian)
 ```
 
 ## Build
@@ -95,16 +94,16 @@ Subscription providers send the xray config; the app passes it on as it is. `har
   user's network) and the router port mapping of `finalmask` are removed.
 
 The tests start a real xray with the hostile configs and check that nothing listens (the OS is asked what the
-process listens on, `lsof`), nothing is written and the environment is untouched. `фиксы.md` has the story of each rule.
+process listens on, `lsof`), nothing is written and the environment is untouched.
 
 ## Memory on iOS
 
 The Network Extension is killed above about 50 MB. What the core does about it: the UDP sessions relay with 8 KB
 buffers (`core/udprelay.go`; tun2socks' own 64 KB per direction filled the extension under a browsing load), GC
 at 20 percent growth, a loop that hands free memory back to the OS every two minutes, and an idle UDP session
-that is let go after 15 s on iOS (`iosUDPTimeout`; 60 s on Android, where memory is not so scarce). How it was
-measured (debug-only sampler in the app's extension, files read through `devicectl`) is in `фиксы.md`, steps 6
-and 11г.
+that is let go after 15 s on iOS (`iosUDPTimeout`; 60 s on Android, where memory is not so scarce). It was
+measured with a debug-only sampler in the app's extension, whose files are read through `devicectl`; the reasons
+for each number are in the commit messages.
 
 ## Checks and CI
 
