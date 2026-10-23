@@ -193,6 +193,17 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
+// MeasureAESGCM encrypts for a third of a second with AES-GCM and returns the
+// speed, "2330 MB/s": tens of MB/s means Go runs it in software, several GB/s
+// that it uses the instructions of the processor. Debug builds only, with the
+// same refusal as SetGCTuning.
+func MeasureAESGCM() (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%.0f MB/s", slipcore.MeasureAESGCM(300*time.Millisecond)), nil
+}
+
 // TunnelNetwork is what the VpnService gives the virtual interface of one
 // session: addresses, the DNS address the system's queries go to when the
 // client answers them itself (an address of the same /24, nothing answers

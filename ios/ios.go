@@ -1,6 +1,7 @@
 package ios
 
 import (
+	"fmt"
 	"time"
 
 	slipcore "slipstream-core/core"
@@ -227,6 +228,19 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 		return "", err
 	}
 	return slipcore.WriteGoroutineDump(dir, name)
+}
+
+// MeasureAESGCM encrypts for a third of a second with AES-GCM and returns the
+// speed, "2330 MB/s". Software AES-GCM is tens of MB/s and the instructions of
+// the processor several GB/s, so it shows which one this framework uses: Go does
+// not know that iOS has the instructions unless the framework was built by make
+// bind-ios, see package toolchain. Debug builds only, with the same refusal as
+// SetGCTuning.
+func MeasureAESGCM() (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%.0f MB/s", slipcore.MeasureAESGCM(300*time.Millisecond)), nil
 }
 
 // FreeMemory runs a GC and hands every free page back to the OS. It blocks while

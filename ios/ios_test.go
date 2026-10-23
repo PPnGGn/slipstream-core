@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/netip"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +54,9 @@ func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
 	if err := SetUDPTimeout(5); err == nil {
 		t.Error("SetUDPTimeout() succeeded in a release build, want an error")
 	}
+	if got, err := MeasureAESGCM(); err == nil {
+		t.Errorf("MeasureAESGCM() = %q in a release build, want an error", got)
+	}
 	if got := slipcore.UDPTimeout(); got != 60*time.Second {
 		t.Errorf("UDP timeout = %v after a refused SetUDPTimeout, want 60s", got)
 	}
@@ -84,6 +88,9 @@ func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
 	}
 	if _, err := WriteGoroutineDump(dir, "x"); err != nil {
 		t.Errorf("WriteGoroutineDump() in a debug build: %v", err)
+	}
+	if got, err := MeasureAESGCM(); err != nil || !strings.HasSuffix(got, " MB/s") {
+		t.Errorf("MeasureAESGCM() in a debug build = %q, %v; want a speed in MB/s", got, err)
 	}
 	if err := SetGCTuning(50, 40); err != nil {
 		t.Errorf("SetGCTuning() in a debug build: %v", err)
