@@ -2,7 +2,6 @@ package android
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,7 +18,8 @@ const (
 // struct with exported fields has a toString that prints all of them, and the
 // password then goes wherever the app logs the object. The credentials are now
 // behind methods, and whatever a program makes of the object as text leaves them
-// out.
+// out. (Not JSON: with no exported field json.Marshal gives {} by the rules of the
+// language, and staticcheck rightly objects to a test that marshals such a type.)
 func TestLocalProxyHidesItsCredentialsInEveryFormat(t *testing.T) {
 	p := newLocalProxy(testSocket, testUser, testPass)
 
@@ -28,11 +28,6 @@ func TestLocalProxyHidesItsCredentialsInEveryFormat(t *testing.T) {
 		outputs = append(outputs, fmt.Sprintf(verb, p), fmt.Sprintf(verb, *p))
 	}
 	outputs = append(outputs, p.String(), fmt.Sprint(p), fmt.Sprint(*p), fmt.Sprintln(p), fmt.Sprintf("%v", []*LocalProxy{p}))
-	if j, err := json.Marshal(p); err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	} else {
-		outputs = append(outputs, string(j))
-	}
 
 	for _, out := range outputs {
 		for name, secret := range map[string]string{"password": testPass, "user": testUser} {
