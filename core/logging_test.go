@@ -33,6 +33,7 @@ func forwarded(t *testing.T, verbose bool) []string {
 		f.Handle(&xraylog.GeneralMessage{Severity: s, Content: "x"})
 	}
 	f.Handle(&xraylog.AccessMessage{From: "a", To: "b", Status: xraylog.AccessAccepted})
+	flushLogs() // delivery is asynchronous
 	return capture.levels
 }
 

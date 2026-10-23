@@ -192,6 +192,7 @@ func TestAWarningWhenNoOutboundIsTaggedProxy(t *testing.T) {
 				t.Fatalf("startXray: %v", err)
 			}
 
+			flushLogs() // delivery is asynchronous
 			got := strings.Contains(logs.joined(), `"proxy"`)
 			if got != tc.warns {
 				t.Errorf("warned = %v, want %v; log:\n%s", got, tc.warns, logs.joined())

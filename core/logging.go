@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	tunlog "github.com/xjasonlyu/tun2socks/v2/log"
 	xraylog "github.com/xtls/xray-core/common/log"
 	"go.uber.org/zap"
@@ -13,8 +14,10 @@ import (
 
 // LogHandler receives the log lines of the core: the level ("info", "warning",
 // "error", ...), the message and where it came from ("xray", "tun2socks",
-// "iobridge"). It is called from the goroutines that log, several at once and
-// on network paths, so it must return quickly.
+// "iobridge"). It is called from one goroutine of its own, one line at a time
+// and in order, never from the goroutines that carry traffic. If it falls
+// behind by more than a queue of lines, the new lines are dropped (and the loss
+// is reported), so it should still return quickly.
 type LogHandler interface {
 	OnLog(level, message, source string)
 }
@@ -22,6 +25,21 @@ type LogHandler interface {
 var (
 	logMu      sync.RWMutex
 	logHandler LogHandler
+)
+
+// logQueueSize is how many lines wait for the handler. Lines are about a
+// hundred bytes, so a full queue is some tens of kilobytes.
+const logQueueSize = 512
+
+type logLine struct {
+	level, message, source string
+	flushed                chan struct{} // set on the marker flushLogs queues, nothing else
+}
+
+var (
+	logQueue   = make(chan logLine, logQueueSize)
+	logDropped atomic.Int64
+	logStart   sync.Once
 )
 
 // SetLogHandler sets where the log lines go; nil stops delivering them. Safe at
@@ -32,13 +50,65 @@ func SetLogHandler(h LogHandler) {
 	logMu.Unlock()
 }
 
+// emitLog hands a line to the handler without waiting for it.
+//
+// The lines are logged by the goroutines that carry connections and packets,
+// and the handler is a call into Kotlin or Swift. A handler that waits (the
+// main thread is busy, a lock is held) must not hold those goroutines, so the
+// lines go through a queue to one goroutine that calls the handler, in order.
+// When the handler falls behind by more than the queue holds, the new lines are
+// dropped and counted; the count is reported when the handler is back. With no
+// handler nothing is queued.
 func emitLog(level, message, source string) {
 	logMu.RLock()
 	h := logHandler
 	logMu.RUnlock()
-	if h != nil {
-		h.OnLog(level, message, source)
+	if h == nil {
+		return
 	}
+	logStart.Do(func() { go deliverLogs() })
+	select {
+	case logQueue <- logLine{level: level, message: message, source: source}:
+	default:
+		logDropped.Add(1)
+	}
+}
+
+// deliverLogs calls the handler for the queued lines, one at a time.
+func deliverLogs() {
+	for line := range logQueue {
+		if line.flushed != nil {
+			close(line.flushed)
+			continue
+		}
+		if n := logDropped.Swap(0); n > 0 {
+			deliverLog("warning", fmt.Sprintf("%d log lines were dropped: the handler is too slow", n), "core")
+		}
+		deliverLog(line.level, line.message, line.source)
+	}
+}
+
+// deliverLog calls the handler, which is read again here: it may have changed
+// since the line was queued. A panic of the handler ends that call, not the
+// delivery of the lines after it.
+func deliverLog(level, message, source string) {
+	logMu.RLock()
+	h := logHandler
+	logMu.RUnlock()
+	if h == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	h.OnLog(level, message, source)
+}
+
+// flushLogs returns once every line queued before the call has been handed to
+// the handler. For tests, which look at what the handler got.
+func flushLogs() {
+	done := make(chan struct{})
+	logStart.Do(func() { go deliverLogs() })
+	logQueue <- logLine{flushed: done}
+	<-done
 }
 
 // LogInfo and LogError send a line of the core itself to the handler.

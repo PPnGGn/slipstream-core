@@ -25,7 +25,8 @@ func init() {
 }
 
 // Handler is implemented by the app and receives the log lines of the core, see
-// slipcore.LogHandler. It is called from many goroutines and must return fast.
+// slipcore.LogHandler. It is called from one goroutine of the core, in order, and
+// should return fast: lines are dropped when it falls far behind.
 type Handler interface {
 	OnLog(level string, message string, source string)
 }
