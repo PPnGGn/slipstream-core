@@ -58,6 +58,11 @@ What to rely on:
 - **No listening ports.** A session opens no TCP port, not even on loopback: the loopback is shared by every app on
   the phone, and a port that answers a probe (SOCKS `05 ff`, HTTP `407`) gives the client away whatever the
   password. The tunnel reaches xray inside the process (`core/bridge.go`).
+- **Tunnel network.** `NewTunnelNetwork()` draws the addresses of the virtual interface for the session: a random
+  /24 of 10.0.0.0/8 for the device and for the DNS address, a random unique local /64 for IPv6. Call it for every
+  session and give the interface what it returns; fixed addresses are what an app that reads the interfaces of
+  the phone could look for. The MTU in it is the core's (1500) and must be used as it is: a smaller one makes the
+  system refuse the larger packets the stack hands back, a larger one makes the stack cut the system's.
 - **Local proxy (Android).** The app is kept out of the tunnel, so its own requests need a proxy. `httpSocket`, a
   path the app can write to (short: about 100 bytes at most), makes the core serve an HTTP proxy on that Unix
   socket; `LocalHTTPProxy()` returns the socket and the password of the session. Pass an empty path for none.

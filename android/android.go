@@ -182,6 +182,37 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
+// TunnelNetwork is what the VpnService gives the virtual interface of one
+// session: addresses, the DNS address the system's queries go to when the
+// client answers them itself (an address of the same /24, nothing answers
+// there) and the MTU. Take them from NewTunnelNetwork for every session and do
+// not use fixed ones: an app that reads the addresses of the interfaces could
+// look for them. The MTU is the one the core's stack is built for, use it as it
+// is.
+type TunnelNetwork struct {
+	Address4 string
+	Prefix4  int64
+	Mask4    string
+	DNS4     string
+	Address6 string
+	Prefix6  int64
+	MTU      int64
+}
+
+// NewTunnelNetwork draws the network of a new session from the system's
+// randomness. An error means there was none, and the session must not start
+// with a made-up one.
+func NewTunnelNetwork() (*TunnelNetwork, error) {
+	n, err := slipcore.NewTunnelNetwork()
+	if err != nil {
+		return nil, err
+	}
+	return &TunnelNetwork{
+		Address4: n.Address4, Prefix4: int64(n.Prefix4), Mask4: n.Mask4, DNS4: n.DNS4,
+		Address6: n.Address6, Prefix6: int64(n.Prefix6), MTU: int64(n.MTU),
+	}, nil
+}
+
 // LocalProxy is the HTTP proxy of the running session, on a Unix socket.
 type LocalProxy struct {
 	Socket string

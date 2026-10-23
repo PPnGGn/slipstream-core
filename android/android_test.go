@@ -2,6 +2,7 @@ package android
 
 import (
 	"math"
+	"net/netip"
 	"os"
 	"runtime"
 	"syscall"
@@ -24,6 +25,41 @@ func TestQueryMemory(t *testing.T) {
 	}
 	if m.Goroutines < 1 {
 		t.Errorf("Goroutines = %d, want >= 1", m.Goroutines)
+	}
+}
+
+// The service gives the virtual interface a network drawn anew for each session:
+// the ones the app used to give every time (10.0.0.2/24, fd00:10:10:10::2/64) are
+// what another app would look for.
+func TestNewTunnelNetworkIsDrawnPerSession(t *testing.T) {
+	a, err := NewTunnelNetwork()
+	if err != nil {
+		t.Fatalf("NewTunnelNetwork: %v", err)
+	}
+	b, err := NewTunnelNetwork()
+	if err != nil {
+		t.Fatalf("NewTunnelNetwork: %v", err)
+	}
+	if *a == *b {
+		t.Errorf("two sessions got the same network %+v", *a)
+	}
+
+	want, err := slipcore.NewTunnelNetwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Prefix4 != int64(want.Prefix4) || a.Prefix6 != int64(want.Prefix6) || a.MTU != int64(want.MTU) {
+		t.Errorf("%+v: want the prefixes and MTU of the core's network (%+v)", *a, want)
+	}
+	v4, v6, dns := netip.MustParseAddr(a.Address4), netip.MustParseAddr(a.Address6), netip.MustParseAddr(a.DNS4)
+	if !netip.MustParsePrefix("10.0.0.0/8").Contains(v4) || !netip.PrefixFrom(v4, int(a.Prefix4)).Masked().Contains(dns) || dns == v4 {
+		t.Errorf("%+v: want the address and the DNS to be two hosts of one /24 in 10.0.0.0/8", *a)
+	}
+	if v6.As16()[0] != 0xfd {
+		t.Errorf("%+v: want a unique local IPv6 address", *a)
+	}
+	if a.Mask4 != "255.255.255.0" {
+		t.Errorf("Mask4 = %q, want 255.255.255.0 for /24", a.Mask4)
 	}
 }
 
