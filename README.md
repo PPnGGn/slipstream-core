@@ -52,8 +52,10 @@ What to rely on:
 - **Counters.** `QueryTraffic` counts the outbound tagged `proxy`. The core switches the counters on itself
   (`stats` and `policy.system.statsOutbound*`, whatever the config says); only the tag is the config's job, and
   the core logs a warning at the start when no outbound has it, since the counters would stay at zero.
-- **Logs.** `SetHandler` receives the core's lines. Release builds log warnings and errors only;
-  `SetVerboseLogs(true)` (debug builds, before `Start`) adds the info lines.
+- **Logs.** `SetHandler` receives the core's lines, from one goroutine of the core and in order, through a queue
+  (never from the goroutines that carry traffic; when the handler falls far behind, new lines are dropped and the
+  loss is reported). Release builds log warnings and errors only, with the addresses in them replaced by
+  `<addr>`; `SetVerboseLogs(true)` (debug builds, before `Start`) adds the info lines and keeps the addresses.
 - **Memory.** `QueryMemory` is cheap and can be polled; `FreeMemory` runs a GC and gives pages back, off the main
   thread. On iOS the extension lives under a limit of about 50 MB, see below.
 - **No listening ports.** A session opens no TCP port, not even on loopback: the loopback is shared by every app on
