@@ -166,7 +166,7 @@ func (*xrayLogForwarder) Handle(msg xraylog.Message) {
 	} else if !verbose {
 		return // access and DNS records: who went where, debug builds only
 	}
-	emitLog(level, msg.String(), "xray")
+	emitLog(level, releaseSafe(msg.String(), verbose), "xray")
 }
 
 // keepXraySeverity: Warning and above always, Info too in debug builds, Debug
@@ -220,7 +220,7 @@ func (c *tun2socksForwardCore) Write(ent zapcore.Entry, fields []zapcore.Field) 
 	if err != nil {
 		return err
 	}
-	emitLog(ent.Level.String(), strings.TrimRight(buf.String(), "\n"), "tun2socks")
+	emitLog(ent.Level.String(), releaseSafe(strings.TrimRight(buf.String(), "\n"), verboseLogs.Load()), "tun2socks")
 	buf.Free()
 	return nil
 }
