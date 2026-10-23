@@ -33,11 +33,7 @@ func StartFd(configJson string, fd int, assetDir string) error {
 	handedOver := false // StartTun owns the descriptor from its call on
 	err := startSession(configJson, assetDir, func() error {
 		handedOver = true
-		if err := StartTun(fd); err != nil {
-			return err
-		}
-		StartMemoryReturn()
-		return nil
+		return StartTun(fd)
 	})
 	if err != nil && !handedOver {
 		CloseTunFd(fd)
@@ -87,7 +83,13 @@ func startSession(configJson, assetDir string, startTun func() error) (err error
 		return err
 	}
 	xrayUp = true
-	return startTun()
+	if err = startTun(); err != nil {
+		return err
+	}
+	// Both platforms: the process lives under a memory limit, and a stopped
+	// session's memory should not wait for the next GC to go back to the OS.
+	StartMemoryReturn()
+	return nil
 }
 
 // stopParts stops everything a session can have started, tunnel first, xray

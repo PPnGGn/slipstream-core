@@ -1,12 +1,14 @@
 package ios
 
 import (
-	"runtime/debug"
 	slipcore "slipstream-core/core"
 )
 
 func init() {
-	debug.SetGCPercent(20)
+	// Let the heap grow to 1.2x live data between GCs: the Network Extension
+	// lives under a hard memory limit. No memory limit of our own yet; it needs
+	// a measurement on a device with a large geo config.
+	_ = slipcore.SetGCTuning(20, 0)
 	slipcore.InstallLogForwarding()
 }
 
@@ -81,6 +83,18 @@ func Stop() error {
 	return slipcore.Stop()
 }
 
+// SetVerboseLogs turns on info-level core logs (xray access + DNS log,
+// tun2socks connections) from the next Start. Debug builds only: the app
+// passes its own debug flag, so release builds never call it with true.
+func SetVerboseLogs(on bool) {
+	slipcore.SetVerboseLogs(on)
+}
+
+// Version returns the embedded xray-core version, e.g. "26.9.9".
+func Version() string {
+	return slipcore.XrayVersion()
+}
+
 type TrafficStats struct {
 	UplinkBytes   int64
 	DownlinkBytes int64
@@ -89,6 +103,31 @@ type TrafficStats struct {
 func QueryTraffic() *TrafficStats {
 	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
+}
+
+// MemoryStats is xray-core/tun2socks's own memory footprint: the Go runtime's,
+// apart from the rest of the extension. See slipcore.MemorySnapshot for what
+// each field means.
+//
+// gomobile binds only this package's types, hence the copy. Fields must match
+// MemorySnapshot exactly (names, types, order): QueryMemory converts one into
+// the other, so any drift stops the build instead of silently zeroing a field.
+type MemoryStats struct {
+	TotalBytes     int64
+	ReleasedBytes  int64
+	RetainedBytes  int64
+	HeapInuseBytes int64
+	StackBytes     int64
+	Goroutines     int64
+	GCCycles       int64
+
+	GCPercent        int64
+	MemoryLimitBytes int64
+}
+
+func QueryMemory() *MemoryStats {
+	m := MemoryStats(slipcore.ReadMemorySnapshot())
+	return &m
 }
 
 func FreeMemory() {

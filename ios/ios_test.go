@@ -2,7 +2,10 @@ package ios
 
 import (
 	"errors"
+	"math"
 	"testing"
+
+	slipcore "slipstream-core/core"
 )
 
 // scriptedFlow answers ReadPacket from a fixed list, then with an error.
@@ -27,6 +30,47 @@ func (f *scriptedFlow) WritePacket(p []byte) error {
 }
 
 const mtu = 1500
+
+func TestQueryMemory(t *testing.T) {
+	m := QueryMemory()
+	if m == nil {
+		t.Fatal("QueryMemory() = nil")
+	}
+	if m.TotalBytes <= 0 || m.RetainedBytes <= 0 || m.RetainedBytes > m.TotalBytes {
+		t.Errorf("RetainedBytes = %d, TotalBytes = %d; want 0 < retained <= total", m.RetainedBytes, m.TotalBytes)
+	}
+	if m.Goroutines < 1 {
+		t.Errorf("Goroutines = %d, want >= 1", m.Goroutines)
+	}
+}
+
+func TestVersionIsTheXrayVersion(t *testing.T) {
+	if Version() == "" || Version() != slipcore.XrayVersion() {
+		t.Errorf("Version() = %q, want the embedded xray version %q", Version(), slipcore.XrayVersion())
+	}
+}
+
+func TestSetVerboseLogsReachesTheCore(t *testing.T) {
+	t.Cleanup(func() { SetVerboseLogs(false) })
+
+	SetVerboseLogs(true)
+	if !slipcore.VerboseLogs() {
+		t.Error("SetVerboseLogs(true) did not reach the core")
+	}
+	SetVerboseLogs(false)
+	if slipcore.VerboseLogs() {
+		t.Error("SetVerboseLogs(false) did not reach the core")
+	}
+}
+
+// The extension lives under a hard memory limit; the GC runs at 20 % growth
+// from the moment the framework loads and has no memory limit of its own yet.
+func TestLoadingTunesTheGC(t *testing.T) {
+	s := slipcore.ReadMemorySnapshot()
+	if s.GCPercent != 20 || s.MemoryLimitBytes != math.MaxInt64 {
+		t.Errorf("gogc = %d, limit = %d after the package loaded; want 20 and none", s.GCPercent, s.MemoryLimitBytes)
+	}
+}
 
 func TestReadDeliversAPacketIntoTheBuffer(t *testing.T) {
 	flow := &scriptedFlow{packets: [][]byte{{0x45, 1, 2, 3}}}

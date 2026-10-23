@@ -35,6 +35,41 @@ func nothingRuns(t *testing.T) {
 	}
 }
 
+func memoryReturnRuns() bool {
+	memReturnMu.Lock()
+	defer memReturnMu.Unlock()
+	return memReturn != nil
+}
+
+// Both platforms hand free memory back to the OS while a session runs, and
+// stop doing it with the session. iOS, where the extension lives under a hard
+// memory limit, needs it at least as much as Android.
+func TestSessionReturnsMemoryOnBothPaths(t *testing.T) {
+	useFileDevices(t)
+	t.Cleanup(func() { _ = Stop() })
+	a, _ := socketPair(t)
+
+	for name, start := range map[string]func() error{
+		"fd": func() error { return StartFd(hardenSample, a, "") },
+		"io": func() error { return StartIO(hardenSample, eofReadWriter{}, "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := start(); err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			if !memoryReturnRuns() {
+				t.Error("no memory return loop while the session runs")
+			}
+			if err := Stop(); err != nil {
+				t.Fatalf("Stop: %v", err)
+			}
+			if memoryReturnRuns() {
+				t.Error("the memory return loop outlived the session")
+			}
+		})
+	}
+}
+
 func TestSessionFdStartsAndStops(t *testing.T) {
 	useFileDevices(t)
 	t.Cleanup(func() { _ = Stop() })
