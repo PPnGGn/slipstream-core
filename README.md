@@ -72,8 +72,10 @@ What to rely on:
   system refuse the larger packets the stack hands back, a larger one makes the stack cut the system's.
 - **Local proxy (Android).** The app is kept out of the tunnel, so its own requests need a proxy. `httpSocket`, a
   path the app can write to (short: about 100 bytes at most), makes the core serve an HTTP proxy on that Unix
-  socket; `LocalHTTPProxy()` returns the socket and the password of the session. Pass an empty path for none.
-  The password must not be logged. A socket file left behind by a killed process is replaced.
+  socket; `LocalHTTPProxy()` returns an object whose methods `Socket()`, `User()` and `Pass()` give the socket and
+  the credentials of the session (Kotlin: `socket()`, `user()`, `pass()`). Pass an empty path for none. Its text
+  (`toString`, `%v` and every other format) names the socket and hides the credentials, but the password still must
+  not be logged by the app. A socket file left behind by a killed process is replaced.
 - **Debug commands.** `SetGCTuning`, `SetUDPTimeout`, `WriteHeapProfile`, `WriteGoroutineDump` refuse to run unless
   `SetVerboseLogs(true)` was called, i.e. in release builds.
 

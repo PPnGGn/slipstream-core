@@ -9,6 +9,8 @@
 package android
 
 import (
+	"fmt"
+	"io"
 	"time"
 
 	slipcore "slipstream-core/core"
@@ -223,11 +225,43 @@ func NewTunnelNetwork() (*TunnelNetwork, error) {
 }
 
 // LocalProxy is the HTTP proxy of the running session, on a Unix socket.
+//
+// The credentials are behind methods and out of every text form of the object.
+// With exported fields gomobile would bind them as getters and setters and
+// print all of them in toString, and the password would go wherever the app
+// logs the object. The object prints its socket and hides the rest, with every
+// format verb and as JSON (which is empty).
 type LocalProxy struct {
-	Socket string
-	User   string
-	Pass   string
+	socket, user, pass string
 }
+
+func newLocalProxy(socket, user, pass string) *LocalProxy {
+	return &LocalProxy{socket: socket, user: user, pass: pass}
+}
+
+// Socket returns the path of the Unix socket to connect to.
+func (p LocalProxy) Socket() string { return p.socket }
+
+// User returns the user name of the proxy for this session.
+func (p LocalProxy) User() string { return p.user }
+
+// Pass returns the password of the proxy for this session. Never log it.
+func (p LocalProxy) Pass() string { return p.pass }
+
+// String names the socket and hides the credentials. gomobile makes it the
+// toString of the Java and Kotlin object.
+func (p LocalProxy) String() string {
+	return "LocalProxy{socket: " + p.socket + ", user: ***, pass: ***}"
+}
+
+// GoString is the %#v form, the same text.
+func (p LocalProxy) GoString() string { return p.String() }
+
+// Format is every other way fmt prints the object (%d, %x and the rest print the
+// fields of a struct, unexported ones too, when it has no Format): all of them
+// give the same text. gomobile does not bind it, as fmt.State is not a type it
+// can carry.
+func (p LocalProxy) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, p.String()) }
 
 // LocalHTTPProxy returns the HTTP proxy the app should use for its own
 // requests while the tunnel is up, or nil when it is down or Start was given no
@@ -241,5 +275,5 @@ func LocalHTTPProxy() *LocalProxy {
 	if !ok {
 		return nil
 	}
-	return &LocalProxy{Socket: socket, User: user, Pass: pass}
+	return newLocalProxy(socket, user, pass)
 }
