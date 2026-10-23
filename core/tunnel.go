@@ -74,7 +74,7 @@ func startStack(link stack.LinkEndpoint, p proxyParams, opts ...option.Option) (
 
 	st, err := t2score.CreateStack(&t2score.Config{
 		LinkEndpoint:     link,
-		TransportHandler: tunnel.T(),
+		TransportHandler: transportHandler{tunnel.T()},
 		Options:          opts,
 	})
 	if err != nil {
