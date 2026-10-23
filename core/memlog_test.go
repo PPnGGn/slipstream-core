@@ -8,12 +8,12 @@ import (
 
 func TestFormatMemoryLine(t *testing.T) {
 	got := formatMemoryLine(MemorySnapshot{
-		TotalBytes:     100 << 20,
-		RetainedBytes:  70 << 20,
-		HeapInuseBytes: 45 << 20,
-		StackBytes:     3 << 19, // 1.5 MB
-		Goroutines:     57,
-		GCCycles:       12,
+		TotalBytes:       100 << 20,
+		RetainedBytes:    70 << 20,
+		HeapInuseBytes:   45 << 20,
+		StackBytes:       3 << 19, // 1.5 MB
+		Goroutines:       57,
+		GCCycles:         12,
 		GCPercent:        100,
 		MemoryLimitBytes: math.MaxInt64, // Go's "no limit"
 	}, CPUTimes{GCSeconds: 1.25, UserSeconds: 30.5})

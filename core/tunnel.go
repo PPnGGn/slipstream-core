@@ -48,8 +48,8 @@ func StartTun(fd int) error {
 	}
 
 	engine.Insert(&engine.Key{
-		Proxy:    socksProxyURL(p).String(),
-		Device:   fmt.Sprintf("fd://%d", fd),
+		Proxy:  socksProxyURL(p).String(),
+		Device: fmt.Sprintf("fd://%d", fd),
 		// Not "info": engine logs "[STACK] device <-> proxy" with the full proxy URL,
 		// which will carry the SOCKS password.
 		LogLevel: "warn",
