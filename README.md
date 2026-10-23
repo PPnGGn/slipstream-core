@@ -105,6 +105,20 @@ that is let go after 15 s on iOS (`iosUDPTimeout`; 60 s on Android, where memory
 measured with a debug-only sampler in the app's extension, whose files are read through `devicectl`; the reasons
 for each number are in the commit messages.
 
+### What returns memory, and when
+
+Four mechanisms look alike and are not one: each acts at a different moment, and each is cheap.
+
+| Mechanism | When | Why |
+|---|---|---|
+| GC at 25 percent growth (Android), 20 (iOS) | all the time, set when the library loads | keeps the heap from growing to twice the live data between collections; no memory limit, as one below the live data of a heavy config keeps the GC running non-stop |
+| `StartMemoryReturn`: GC and `FreeOSMemory` every 2 minutes | while a session runs | after a switch from a heavy config the GC threshold stays high, and on a light one the next GC may be minutes away; about 0.1% of the core's CPU |
+| `Stop` runs `FreeMemory` in a goroutine | when a session ends | the stopped session is garbage now; the app calls `Stop` on its main thread, so the GC is off it |
+| `FreeMemory` from the app's `onTrimMemory` | when the system asks for memory | on Android only; the same call, in the background |
+
+Take none of them out without measuring on a phone: they were measured as a set (iOS, steps of the memory work in the
+commit history).
+
 ## Checks and CI
 
 `make check` runs everything; `.github/workflows/ci.yml` runs it on every push, pull request and once a day (new
