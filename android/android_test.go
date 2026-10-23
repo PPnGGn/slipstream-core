@@ -63,6 +63,13 @@ func TestNewTunnelNetworkIsDrawnPerSession(t *testing.T) {
 	}
 }
 
+// The artifact tells which commit of the core it was built from.
+func TestBuildCommitIsTheCores(t *testing.T) {
+	if BuildCommit() == "" || BuildCommit() != slipcore.BuildCommit() {
+		t.Errorf("BuildCommit() = %q, want the core's %q", BuildCommit(), slipcore.BuildCommit())
+	}
+}
+
 func TestLoadingTunesGC(t *testing.T) {
 	s := slipcore.ReadMemorySnapshot()
 	if s.GCPercent != 25 {

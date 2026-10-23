@@ -24,9 +24,14 @@
 # emulators; `make bind-android ANDROID_TARGETS=android/arm64,android/arm`
 # roughly halves the AAR.
 
+# COMMIT is stamped into the binary (core.BuildCommit): the short hash of HEAD,
+# with -dirty after it when the tree has uncommitted changes, "unknown" outside a
+# git checkout. A bug report from a phone then names the source of the core.
+COMMIT := $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)$(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
+
 AAR_OUT := ../slipstream/android/app/libs/slipstreamcore.aar
 IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
-LDFLAGS := -checklinkname=0 -s -w
+LDFLAGS := -checklinkname=0 -s -w -X slipstream-core/core.buildCommit=$(COMMIT)
 ANDROID_TARGETS := android
 
 .PHONY: bind bind-android bind-ios build vet tidy check check-fmt test vuln lint check-xray-pin

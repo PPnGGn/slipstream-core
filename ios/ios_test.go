@@ -165,6 +165,13 @@ func TestQueryMemory(t *testing.T) {
 	}
 }
 
+// The artifact tells which commit of the core it was built from.
+func TestBuildCommitIsTheCores(t *testing.T) {
+	if BuildCommit() == "" || BuildCommit() != slipcore.BuildCommit() {
+		t.Errorf("BuildCommit() = %q, want the core's %q", BuildCommit(), slipcore.BuildCommit())
+	}
+}
+
 func TestVersionIsTheXrayVersion(t *testing.T) {
 	if Version() == "" || Version() != slipcore.XrayVersion() {
 		t.Errorf("Version() = %q, want the embedded xray version %q", Version(), slipcore.XrayVersion())

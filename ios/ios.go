@@ -137,6 +137,14 @@ func Version() string {
 	return slipcore.XrayVersion()
 }
 
+// BuildCommit returns the commit of slipstream-core this framework was built
+// from (with "-dirty" after it when the tree had uncommitted changes), or
+// "unknown" for a build that did not stamp it. For a bug report: Version says
+// which xray is inside, this says which core.
+func BuildCommit() string {
+	return slipcore.BuildCommit()
+}
+
 // TrafficStats are the bytes counted through the proxy outbound since Start.
 type TrafficStats struct {
 	UplinkBytes   int64

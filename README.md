@@ -27,6 +27,10 @@ make check          # what CI runs: gofmt, vet, go test -race, govulncheck, stat
 The bindings are stripped (`-s -w -trimpath`); `make bind-android ANDROID_TARGETS=android/arm64,android/arm`
 leaves out the emulator ABIs. See the comments in the `Makefile` for the reasons and the measured sizes.
 
+The commit of the core is stamped into the binary (`-X`, from `git rev-parse`, with `-dirty` after it when the tree
+has uncommitted changes) and `BuildCommit()` returns it, next to `Version()` for the xray inside: put both in a bug
+report. A build without the stamp (`go build`, `go test`) says `unknown`.
+
 ## How the apps use it
 
 One session at a time: xray, the tunnel stack on top of it and the memory helpers. Three calls cover it, on each
