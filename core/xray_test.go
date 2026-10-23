@@ -63,6 +63,33 @@ const geoConfig = `{
 	]}
 }`
 
+// The asset directory is process-global environment. A session that passes no
+// directory must get xray's default, not the directory of the session before
+// it: a config that needs geo data then builds against files the caller did
+// not hand over this time.
+func TestBuildCoreConfig_AssetDirDoesNotOutliveItsSession(t *testing.T) {
+	t.Cleanup(func() {
+		os.Unsetenv("xray.location.asset")
+		os.Unsetenv("XRAY_LOCATION_ASSET")
+	})
+	dir := t.TempDir()
+	writeGeoFixtures(t, dir)
+
+	if _, err := buildCoreConfig(geoConfig, dir); err != nil {
+		t.Fatalf("first session, assetDir=%q: %v", dir, err)
+	}
+
+	_, err := buildCoreConfig(geoConfig, "")
+	if err == nil {
+		t.Error("second session without assetDir built against the geo files of the first one")
+	}
+	for _, name := range []string{"xray.location.asset", "XRAY_LOCATION_ASSET"} {
+		if got := os.Getenv(name); got != "" {
+			t.Errorf("%s = %q after a session without assetDir, want it unset", name, got)
+		}
+	}
+}
+
 func TestBuildCoreConfig_GeoAssetsFromAssetDir(t *testing.T) {
 	// GetAssetLocation is process-global env; keep the suite hermetic.
 	t.Cleanup(func() {

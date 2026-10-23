@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/stats"
@@ -70,15 +71,35 @@ func StartXray(configJson string, assetDir string) error {
 	return nil
 }
 
+// assetEnvSet is true while the asset variables hold a directory this package
+// put there.
+var assetEnvSet atomic.Bool
+
+// setAssetDir exports assetDir for xray, or, when it is empty, takes back what
+// an earlier session exported so that this one gets xray's default instead of
+// that session's directory. The variables are process-global and the process
+// outlives sessions. An empty assetDir does not touch variables this package
+// never set. Values that were in the environment before the first export are
+// not restored; the app does not set them.
+func setAssetDir(assetDir string) {
+	if assetDir != "" {
+		_ = os.Setenv("xray.location.asset", assetDir)
+		_ = os.Setenv("XRAY_LOCATION_ASSET", assetDir)
+		assetEnvSet.Store(true)
+		return
+	}
+	if assetEnvSet.Swap(false) {
+		_ = os.Unsetenv("xray.location.asset")
+		_ = os.Unsetenv("XRAY_LOCATION_ASSET")
+	}
+}
+
 // buildCoreConfig points xray at assetDir (for geosite.dat / geoip.dat) and
 // turns configJson into a built *core.Config. Geo databases are read here, at
 // Build() time — a config that names a geosite:/geoip: category with no data
 // file present fails at this step, before anything starts.
 func buildCoreConfig(configJson string, assetDir string) (*core.Config, error) {
-	if assetDir != "" {
-		_ = os.Setenv("xray.location.asset", assetDir)
-		_ = os.Setenv("XRAY_LOCATION_ASSET", assetDir)
-	}
+	setAssetDir(assetDir)
 
 	pbConfig, err := serial.DecodeJSONConfig(bytes.NewReader([]byte(configJson)))
 	if err != nil {
