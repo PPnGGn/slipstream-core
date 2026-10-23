@@ -51,8 +51,10 @@ STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 
 check: check-fmt vet test vuln lint
 
+# Not the copy of the Go toolchain in .toolchain/: it is Go's own source, and the
+# directories that start with a dot are left out of ./... by the go tool already.
 check-fmt:
-	@unformatted="$$(gofmt -l .)"; \
+	@unformatted="$$(gofmt -l $$(find . -name '*.go' -not -path './.toolchain/*'))"; \
 	if [ -n "$$unformatted" ]; then echo "gofmt needs to be run on:"; echo "$$unformatted"; exit 1; fi
 
 test:
