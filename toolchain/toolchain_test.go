@@ -51,16 +51,32 @@ func buildLine(t *testing.T, src []byte) string {
 	return ""
 }
 
-// fakeRoot is a small GOROOT: a VERSION file, a program in bin, the file that
-// gets replaced and a few others, one of them a symbolic link, all read-only
-// the way the Go module cache keeps a toolchain.
+func installedTransport(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(installedRoot(t), ScratchRelPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// fakeRoot is a small GOROOT: a VERSION file, a program in bin, the two files that
+// get changed and a few others, one of them a symbolic link, all read-only
+// the way the Go module cache keeps a toolchain. The file of the HTTP/2 client
+// is the one of the installed Go.
 func fakeRoot(t *testing.T, version string, original []byte) string {
+	t.Helper()
+	return fakeRootWith(t, version, original, installedTransport(t))
+}
+
+func fakeRootWith(t *testing.T, version string, original, transport []byte) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string][]byte{
 		"VERSION":               []byte(version + "\ntime 2026-10-19T22:20:36Z\n"),
 		"bin/go":                []byte("#!/bin/sh\necho fake\n"),
 		RelPath:                 original,
+		ScratchRelPath:          transport,
 		"src/internal/cpu/a.go": []byte("package cpu\n"),
 		"src/other/file.go":     []byte("package other\n"),
 	}
@@ -92,7 +108,8 @@ func fakeRoot(t *testing.T, version string, original []byte) string {
 			return nil
 		})
 	})
-	for _, dir := range []string{"bin", "lib", "src/internal/cpu", "src/internal", "src/other", "src"} {
+	for _, dir := range []string{"bin", "lib", "src/internal/cpu", "src/internal", "src/other",
+		"src/net/http/internal/http2", "src/net/http/internal", "src/net/http", "src/net", "src"} {
 		if err := os.Chmod(filepath.Join(root, filepath.FromSlash(dir)), 0o555); err != nil {
 			t.Fatal(err)
 		}

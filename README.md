@@ -26,7 +26,7 @@ make check          # what CI runs: gofmt, vet, go test -race, govulncheck, stat
 The bindings are stripped (`-s -w -trimpath`); `make bind-android ANDROID_TARGETS=android/arm64,android/arm`
 leaves out the emulator ABIs. See the comments in the `Makefile` for the reasons and the measured sizes.
 
-### The iOS framework and the AES instructions
+### The iOS framework: the AES instructions and the HTTP/2 buffers
 
 Go cannot ask iOS which extensions the processor has, so for `GOOS=ios` it takes the AES, PMULL and SHA ones as
 absent (`internal/cpu/cpu_arm64_other.go`) and the crypto packages run AES-GCM in software; for macOS it assumes
@@ -39,15 +39,28 @@ megabyte of traffic was 79 ms with the stock toolchain and 51 and 50 ms in two r
 the other stock runs, with other mixes of traffic, were 98 and 135 ms. Memory did not change: the peak of the
 footprint under that load is 45 to 49 MB either way.
 
-`make bind-ios` therefore builds with a copy of the Go toolchain (`.toolchain/ios-go`, made once per version of Go,
-not in git) in which that one file says the extensions are there. `toolchain/` has the replacement, the hash of the
-file it replaces and the code that makes the copy. Not an overlay, because go refuses to replace files in the module
-cache, where the toolchain of `go.mod` lives; and not a flag set from our own `init`, because an AEAD that another
-package builds in its `init` would be set up without the hardware tables and then used with them.
+The second thing is memory. The HTTP/2 client of `net/http` keeps a buffer for every stream that has a request
+body, the size of `min(the frame size of the server, 512 KB)`. With XHTTP that is some 25 streams and 13 MB, 46% of
+the live heap of the extension during a speed test (the profile is `writeRequestBody` through `sync.Pool`), and at
+130 to 260 Mbit/s the extension was killed in 4 runs of 6 (it restarts, with the footprint at 48 to 49 MB just
+before; iOS leaves no log of it). Capped at 16 KB, the frame size every peer accepts and a sender may always use,
+the same test did not kill it in 3 runs of 3, with 670 to 1000 MB moved in each. The cap is one line of
+`net/http/internal/http2/transport.go`. A server that allows frames of 16 KB only never had the problem.
 
-When a new Go ships another `cpu_arm64_other.go` (it may detect the extensions itself by then),
-`TestReplacementIsWrittenForTheFileGoShips` fails, and `make bind-ios` refuses the copy: see what changed, then pin
-the new hash in `toolchain/original.sha256` or drop the replacement.
+`make bind-ios` therefore builds with a copy of the Go toolchain (`.toolchain/ios-go`, made once per version of Go,
+not in git) in which the file of the processor says the extensions are there and the HTTP/2 client has the cap of
+16 KB. `toolchain/` has the replacement, the line that changes, the hashes of the two files as Go ships them and the
+code that makes the copy. Not an overlay, because go refuses to replace files in the module cache, where the
+toolchain of `go.mod` lives; and not a flag set from our own `init`, because an AEAD that another package builds in
+its `init` would be set up without the hardware tables and then used with them.
+
+When a new Go ships another `cpu_arm64_other.go` or `net/http/internal/http2/transport.go` (it may detect the
+extensions, or size the buffers, itself by then), `TestReplacementIsWrittenForTheFileGoShips` or
+`TestScratchCapIsWrittenForTheFileGoShips` fails, and `make bind-ios` refuses the copy: see what changed, then pin
+the new hash (`toolchain/original.sha256`, `toolchain/scratch.sha256`) or drop the change. The test
+`TestStreamsWithABodyCostLittleInTheCopy` opens 20 streams with a body in the stock toolchain and in the copy and
+compares the live heap: 10.9 MB against 0.7 MB. The cap is in the HTTP/2 client inside `net/http` only;
+`golang.org/x/net/http2`, which the MASQUE transport of xray uses, has the same one and is not changed.
 
 The commit of the core is stamped into the binary (`-X`, from `git rev-parse`, with `-dirty` after it when the tree
 has uncommitted changes) and `BuildCommit()` returns it, next to `Version()` for the xray inside: put both in a bug
