@@ -68,7 +68,7 @@ func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
 	t.Cleanup(func() {
 		slipcore.SetVerboseLogs(false)
 		_ = slipcore.SetGCTuning(20, 0)
-		_ = slipcore.SetUDPTimeout(60 * time.Second)
+		_ = slipcore.SetUDPTimeout(0)
 	})
 	dir := t.TempDir()
 
@@ -90,6 +90,29 @@ func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
 	s := slipcore.ReadMemorySnapshot()
 	if s.GCPercent != 50 || s.MemoryLimitBytes != 40<<20 {
 		t.Errorf("gogc = %d, limit = %d after SetGCTuning(50, 40); want 50 and 40 MB", s.GCPercent, s.MemoryLimitBytes)
+	}
+}
+
+// The extension is killed above about 50 MB, and a UDP session that idles for
+// a minute holds on to its relay buffers and goroutines. A session started
+// through this package lets an idle one go after 15 s (measured on an iPhone:
+// 28 MB at the peak of a browsing load, 37 MB at 60 s).
+func TestStartUsesAShortUDPTimeout(t *testing.T) {
+	t.Cleanup(func() { _ = Stop(); _ = slipcore.SetUDPTimeout(0) })
+	_ = slipcore.SetUDPTimeout(0)
+
+	flow := &scriptedFlow{end: errors.New("flow closed")}
+	if err := Start(`{"outbounds":[{"protocol":"freedom","tag":"direct"}]}`, flow, ""); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := slipcore.UDPTimeout(); got != 15*time.Second {
+		t.Errorf("UDP timeout = %v while the session runs, want 15s", got)
+	}
+	if err := Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := slipcore.UDPTimeout(); got != 60*time.Second {
+		t.Errorf("UDP timeout = %v after Stop, want the default 60s back", got)
 	}
 }
 

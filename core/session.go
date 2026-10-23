@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 // A session is one run of the VPN: xray, the tunnel stack on top of it and the
@@ -35,7 +36,7 @@ var errSessionRunning = errors.New("a session is already running")
 // ActiveHTTPProxy. With "" nothing listens at all.
 func StartFd(configJson string, fd int, assetDir string, httpSocket string) error {
 	handedOver := false // startTun owns the descriptor from its call on
-	err := startSession(configJson, assetDir, httpSocket, func() error {
+	err := startSession(configJson, assetDir, httpSocket, 0, func() error {
 		handedOver = true
 		return startTun(fd)
 	})
@@ -46,9 +47,11 @@ func StartFd(configJson string, fd int, assetDir string, httpSocket string) erro
 }
 
 // StartIO starts a session whose tunnel reads and writes packets through rw
-// (iOS). A failed start leaves nothing running.
+// (iOS). A failed start leaves nothing running. The extension lives under a
+// memory limit, so an idle UDP session is let go after iosUDPTimeout instead of
+// the general minute, unless SetUDPTimeout says otherwise.
 func StartIO(configJson string, rw io.ReadWriter, assetDir string) error {
-	return startSession(configJson, assetDir, "", func() error {
+	return startSession(configJson, assetDir, "", iosUDPTimeout, func() error {
 		return startTunIO(rw)
 	})
 }
@@ -64,7 +67,10 @@ func Stop() (err error) {
 	return stopParts()
 }
 
-func startSession(configJson, assetDir, httpSocket string, startTun func() error) (err error) {
+// startSession brings the parts up in order. udpDefault is the idle time of a
+// UDP session on this platform, 0 for the general default; it is in place when
+// the tunnel starts and is dropped again by stopParts.
+func startSession(configJson, assetDir, httpSocket string, udpDefault time.Duration, startTun func() error) (err error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
@@ -87,6 +93,7 @@ func startSession(configJson, assetDir, httpSocket string, startTun func() error
 		return err
 	}
 	xrayUp = true
+	udpSessionDefault.Store(int64(udpDefault))
 	if err = startTun(); err != nil {
 		return err
 	}
@@ -104,6 +111,7 @@ func stopParts() (err error) {
 		func() error { StopMemoryReturn(); return nil },
 		func() error { stopTun(); return nil },
 		func() error { stopTunIO(); return nil },
+		func() error { udpSessionDefault.Store(0); return nil },
 		stopXray,
 	} {
 		if e := runStop(stop); e != nil && err == nil {

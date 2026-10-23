@@ -87,8 +87,10 @@ process listens on, `lsof`), nothing is written and the environment is untouched
 
 The Network Extension is killed above about 50 MB. What the core does about it: the UDP sessions relay with 8 KB
 buffers (`core/udprelay.go`; tun2socks' own 64 KB per direction filled the extension under a browsing load), GC
-at 20 percent growth, and a loop that hands free memory back to the OS every two minutes. How it was measured
-(debug-only sampler in the app's extension, files read through `devicectl`) is in `фиксы.md`, step 6.
+at 20 percent growth, a loop that hands free memory back to the OS every two minutes, and an idle UDP session
+that is let go after 15 s on iOS (`iosUDPTimeout`; 60 s on Android, where memory is not so scarce). How it was
+measured (debug-only sampler in the app's extension, files read through `devicectl`) is in `фиксы.md`, steps 6
+and 11г.
 
 ## Checks and CI
 

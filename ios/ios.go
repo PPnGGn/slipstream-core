@@ -158,7 +158,8 @@ func SetGCTuning(percent int, limitMB int) error {
 }
 
 // SetUDPTimeout sets, in seconds, how long an idle UDP session of the tunnel
-// lives (60 by default). Every session holds two 64 KB relay buffers while it
+// lives (15 by default on iOS, where the extension is killed at about 50 MB;
+// 0 takes the setting back). Every session holds a relay buffer while it
 // lives. For measuring memory; applies to sessions that start after the call
 // and is kept across sessions of the process. Debug builds only, with the same
 // refusal as SetGCTuning.

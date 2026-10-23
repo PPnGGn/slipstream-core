@@ -34,7 +34,7 @@ func (c *fakeRelayedConn) Close() error {
 // whole timeout. The timeout is therefore a setting, with tun2socks' own
 // default until someone sets another.
 func TestUDPTimeout(t *testing.T) {
-	t.Cleanup(func() { _ = SetUDPTimeout(defaultUDPTimeout) })
+	t.Cleanup(func() { _ = SetUDPTimeout(0) })
 
 	if got := UDPTimeout(); got != 60*time.Second {
 		t.Errorf("default UDP timeout = %v, want tun2socks' 60s", got)
@@ -45,13 +45,18 @@ func TestUDPTimeout(t *testing.T) {
 	if got := UDPTimeout(); got != 20*time.Second {
 		t.Errorf("UDPTimeout() = %v after SetUDPTimeout(20s)", got)
 	}
-	for _, bad := range []time.Duration{0, -time.Second} {
-		if err := SetUDPTimeout(bad); err == nil {
-			t.Errorf("SetUDPTimeout(%v) succeeded, want an error", bad)
-		}
+	if err := SetUDPTimeout(-time.Second); err == nil {
+		t.Error("SetUDPTimeout(-1s) succeeded, want an error")
 	}
 	if got := UDPTimeout(); got != 20*time.Second {
-		t.Errorf("UDPTimeout() = %v after refused values, want 20s kept", got)
+		t.Errorf("UDPTimeout() = %v after a refused value, want 20s kept", got)
+	}
+	// Zero takes the setting back: the default of the platform applies again.
+	if err := SetUDPTimeout(0); err != nil {
+		t.Fatalf("SetUDPTimeout(0): %v", err)
+	}
+	if got := UDPTimeout(); got != 60*time.Second {
+		t.Errorf("UDPTimeout() = %v after SetUDPTimeout(0), want the default 60s", got)
 	}
 }
 

@@ -29,27 +29,51 @@ const (
 	tcpBufferMax     = 1 << 20
 )
 
-// defaultUDPTimeout is how long tun2socks keeps an idle UDP session by default.
+// defaultUDPTimeout is how long an idle UDP session lives where memory is not
+// scarce, as in tun2socks (Android).
 const defaultUDPTimeout = 60 * time.Second
 
-var udpTimeout atomic.Int64 // time.Duration, applied to sessions that start later
+// iosUDPTimeout is the default in the Network Extension of iOS, which is killed
+// at about 50 MB. A session that idles for a minute keeps its relay buffer, its
+// goroutines and xray's records, and three browser pages in a row make the
+// difference between a peak of 37 MB (60 s), 33 MB (30 s) and 28 MB (15 s) on
+// an iPhone. The price is that a flow silent for longer than that restarts from
+// another source port when it speaks again, which DNS does not notice and QUIC
+// survives by starting over.
+const iosUDPTimeout = 15 * time.Second
 
-func init() { udpTimeout.Store(int64(defaultUDPTimeout)) }
+var (
+	// udpOverride is a value set by hand (debug builds), 0 for none.
+	udpOverride atomic.Int64
+	// udpSessionDefault is the default of the running session, 0 for the
+	// general one.
+	udpSessionDefault atomic.Int64
+)
 
 // UDPTimeout is how long a UDP session of the tunnel may stay idle before it is
-// closed.
-func UDPTimeout() time.Duration { return time.Duration(udpTimeout.Load()) }
+// closed: the value set by SetUDPTimeout if there is one, otherwise the default
+// of the running session's platform.
+func UDPTimeout() time.Duration {
+	if d := udpOverride.Load(); d > 0 {
+		return time.Duration(d)
+	}
+	if d := udpSessionDefault.Load(); d > 0 {
+		return time.Duration(d)
+	}
+	return defaultUDPTimeout
+}
 
 // SetUDPTimeout sets the idle time after which a UDP session of the tunnel is
-// closed. Every session holds two 64 KB relay buffers while it lives, so the
-// timeout bounds how much memory a burst of short flows keeps. It applies to
-// sessions that start after the call and is kept across sessions.
+// closed, whatever the platform's default is; 0 takes the setting back. Every
+// session holds a relay buffer while it lives, so the timeout bounds how much
+// memory a burst of short flows keeps. It applies to sessions that start after
+// the call and is kept across sessions.
 func SetUDPTimeout(d time.Duration) error {
-	if d <= 0 {
-		return fmt.Errorf("udp timeout %v: want > 0", d)
+	if d < 0 {
+		return fmt.Errorf("udp timeout %v: want >= 0", d)
 	}
-	udpTimeout.Store(int64(d))
-	tunnel.T().SetUDPTimeout(d)
+	udpOverride.Store(int64(d))
+	tunnel.T().SetUDPTimeout(UDPTimeout())
 	return nil
 }
 

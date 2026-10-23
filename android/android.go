@@ -151,9 +151,9 @@ func SetGCTuning(percent int, limitMB int) error {
 }
 
 // SetUDPTimeout sets, in seconds, how long an idle UDP session of the tunnel
-// lives (60 by default). Every session holds two 64 KB relay buffers while it
-// lives. For measuring memory; applies to sessions that start after the call.
-// Debug builds only, with the same refusal as SetGCTuning.
+// lives (60 by default; 0 takes the setting back). Every session holds a relay
+// buffer while it lives. For measuring memory; applies to sessions that start
+// after the call. Debug builds only, with the same refusal as SetGCTuning.
 func SetUDPTimeout(seconds int) error {
 	if err := slipcore.RequireDebug(); err != nil {
 		return err
