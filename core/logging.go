@@ -40,7 +40,7 @@ func LogError(message, source string) { emitLog("error", message, source) }
 
 // verboseLogs raises xray and tun2socks to info for debug builds. The app sets
 // it before Start from its own debuggable flag, so a release build can't turn
-// it on. Even then engine's start-up logger stays at warn (see StartTun): its
+// it on. Even then engine's start-up logger stays at warn (see startTun): its
 // "[STACK]" line would print the proxy password.
 var verboseLogs atomic.Bool
 

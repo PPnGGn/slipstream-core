@@ -76,10 +76,10 @@ func TestQueryTrafficDoesNotWaitForTheBuild(t *testing.T) {
 		return old(configJson, assetDir)
 	}
 	t.Cleanup(func() { buildXrayConfig = old })
-	t.Cleanup(func() { _ = StopXray() })
+	t.Cleanup(func() { _ = stopXray() })
 
 	startDone := make(chan error, 1)
-	go func() { startDone <- StartXray(hardenSample, "") }()
+	go func() { startDone <- startXray(hardenSample, "") }()
 	<-entered // StartXray is inside the build
 
 	polled := make(chan struct{})

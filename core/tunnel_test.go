@@ -123,10 +123,10 @@ func startableProxy(t *testing.T) {
 func TestStartTunRejectsAnInvalidDescriptor(t *testing.T) {
 	startableProxy(t)
 
-	err := StartTun(-1)
+	err := startTun(-1)
 	if err == nil {
-		StopTun()
-		t.Fatal("StartTun(-1) = nil, want an error")
+		stopTun()
+		t.Fatal("startTun(-1) = nil, want an error")
 	}
 }
 
@@ -135,14 +135,14 @@ func TestStartTunRunsUntilStopTunReleasesTheDescriptor(t *testing.T) {
 	useFileDevices(t)
 	a, _ := socketPair(t)
 
-	if err := StartTun(a); err != nil {
+	if err := startTun(a); err != nil {
 		t.Fatalf("StartTun: %v", err)
 	}
 	if !fdIsOpen(a) {
 		t.Fatal("the descriptor is closed while the tunnel runs")
 	}
 
-	StopTun()
+	stopTun()
 	if fdIsOpen(a) {
 		syscall.Close(a)
 		t.Errorf("descriptor %d is still open after StopTun", a)
@@ -155,13 +155,13 @@ func TestStopTunDoesNotHangOnAStuckRead(t *testing.T) {
 	startableProxy(t)
 	useFileDevices(t, true)
 	a, _ := socketPair(t)
-	if err := StartTun(a); err != nil {
+	if err := startTun(a); err != nil {
 		t.Fatalf("StartTun: %v", err)
 	}
 
 	done := make(chan struct{})
 	go func() {
-		StopTun()
+		stopTun()
 		close(done)
 	}()
 	select {
@@ -178,13 +178,13 @@ func TestStartTunRefusesASecondStart(t *testing.T) {
 	startableProxy(t)
 	useFileDevices(t)
 	a, _ := socketPair(t)
-	if err := StartTun(a); err != nil {
+	if err := startTun(a); err != nil {
 		t.Fatalf("first StartTun: %v", err)
 	}
-	t.Cleanup(StopTun)
+	t.Cleanup(stopTun)
 
 	c, _ := socketPair(t)
-	if err := StartTun(c); err == nil {
+	if err := startTun(c); err == nil {
 		t.Error("second StartTun succeeded while a tunnel runs")
 	}
 	if fdIsOpen(c) {
@@ -207,20 +207,20 @@ func TestStartTunIOStartsStopsAndRestarts(t *testing.T) {
 	startableProxy(t)
 
 	for round := 1; round <= 2; round++ {
-		if err := StartTunIO(eofReadWriter{}); err != nil {
+		if err := startTunIO(eofReadWriter{}); err != nil {
 			t.Fatalf("round %d: StartTunIO: %v", round, err)
 		}
-		if err := StartTunIO(eofReadWriter{}); err == nil {
+		if err := startTunIO(eofReadWriter{}); err == nil {
 			t.Errorf("round %d: second StartTunIO succeeded while a tunnel runs", round)
 		}
-		StopTunIO()
+		stopTunIO()
 	}
 }
 
 func TestStartTunIOWithoutXray(t *testing.T) {
 	clearActiveProxy()
-	if err := StartTunIO(eofReadWriter{}); err == nil {
-		StopTunIO()
+	if err := startTunIO(eofReadWriter{}); err == nil {
+		stopTunIO()
 		t.Error("StartTunIO succeeded with no xray running")
 	}
 }
@@ -240,8 +240,8 @@ func TestStartTunClosesFdWhenXrayIsNotRunning(t *testing.T) {
 		t.Fatalf("dup: %v", err)
 	}
 
-	if err := StartTun(fd); err == nil {
-		t.Fatal("StartTun() succeeded with no xray running")
+	if err := startTun(fd); err == nil {
+		t.Fatal("startTun() succeeded with no xray running")
 	}
 	var st syscall.Stat_t
 	if syscall.Fstat(fd, &st) == nil {
@@ -259,7 +259,7 @@ func TestStopTunClosesRelayedConns(t *testing.T) {
 		statistic.DefaultManager.Leave(b)
 	})
 
-	StopTun()
+	stopTun()
 
 	if !a.closed.Load() || !b.closed.Load() {
 		t.Errorf("closed: a=%v b=%v, want both", a.closed.Load(), b.closed.Load())

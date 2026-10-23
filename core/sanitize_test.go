@@ -19,7 +19,7 @@ import (
 )
 
 // startHardened runs a provider config through hardenConfig, builds it and
-// starts a real xray instance: what StartXray does, minus the global state.
+// starts a real xray instance: what startXray does, minus the global state.
 func startHardened(t *testing.T, providerConfig string) {
 	t.Helper()
 	p, err := newProxyParams()

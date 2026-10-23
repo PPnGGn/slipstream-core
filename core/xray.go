@@ -20,10 +20,10 @@ var (
 )
 
 // buildXrayConfig is buildCoreConfig, a variable only so that a test can hold
-// StartXray inside the slow step.
+// startXray inside the slow step.
 var buildXrayConfig = buildCoreConfig
 
-// StartXray builds and starts xray-core from configJson.
+// startXray builds and starts xray-core from configJson.
 //
 // assetDir, if non-empty, is where xray looks for geosite.dat / geoip.dat when
 // the config references geosite:/geoip: categories. It is exported as the
@@ -35,7 +35,7 @@ var buildXrayConfig = buildCoreConfig
 // mu guards only the xrayInst pointer and is never held while building or
 // starting: that takes seconds on a large geo config, and QueryTraffic, which
 // the app polls, needs mu. Callers are serialized by the session lock.
-func StartXray(configJson string, assetDir string) error {
+func startXray(configJson string, assetDir string) error {
 	mu.Lock()
 	running := xrayInst != nil
 	mu.Unlock()
@@ -74,14 +74,14 @@ func StartXray(configJson string, assetDir string) error {
 	InstallLogForwarding()
 
 	mu.Lock()
-	if xrayInst != nil { // another StartXray won; callers are meant to be serialized
+	if xrayInst != nil { // another startXray won; callers are meant to be serialized
 		mu.Unlock()
 		_ = inst.Close()
 		return fmt.Errorf("xray is already running")
 	}
 	xrayInst = inst
 	mu.Unlock()
-	// Published only once xray is really up: StartTun reads it next.
+	// Published only once xray is really up: startTun reads it next.
 	setActiveProxy(params)
 	return nil
 }
@@ -134,9 +134,9 @@ func XrayVersion() string {
 	return core.Version()
 }
 
-// StopXray stops xray and withdraws the local proxy parameters. Closing the
-// instance happens outside mu, for the same reason StartXray does not hold it.
-func StopXray() error {
+// stopXray stops xray and withdraws the local proxy parameters. Closing the
+// instance happens outside mu, for the same reason startXray does not hold it.
+func stopXray() error {
 	// Unconditional: the credentials must never outlive the session.
 	clearActiveProxy()
 

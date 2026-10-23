@@ -105,30 +105,30 @@ var (
 	fdActive *fdTunnel
 )
 
-// CloseTunFd closes a TUN descriptor that never reached StartTun. The app
+// closeTunFd closes a TUN descriptor that never reached startTun. The app
 // detaches the descriptor from its ParcelFileDescriptor before handing it
 // over, so from then on the core is the only one that can close it: if the
 // core does not, the VPN interface stays up with nothing reading from it and
 // the phone has no network until the process dies.
-func CloseTunFd(fd int) {
+func closeTunFd(fd int) {
 	_ = os.NewFile(uintptr(fd), "tun").Close()
 }
 
-// StartTun starts tun2socks on the TUN descriptor fd and takes ownership of
-// it: on success the device closes it when StopTun runs, and when StartTun
+// startTun starts tun2socks on the TUN descriptor fd and takes ownership of
+// it: on success the device closes it when stopTun runs, and when startTun
 // refuses to start, or fails, it closes it itself. It returns an error when a
 // tunnel is already running, xray is not, or the stack cannot be built.
-func StartTun(fd int) error {
+func startTun(fd int) error {
 	fdMu.Lock()
 	defer fdMu.Unlock()
 
 	if fdActive != nil {
-		CloseTunFd(fd)
+		closeTunFd(fd)
 		return fmt.Errorf("tun2socks is already running")
 	}
 	p, ok := activeProxyParams()
 	if !ok {
-		CloseTunFd(fd)
+		closeTunFd(fd)
 		return fmt.Errorf("start tun: xray is not running")
 	}
 	if fd < 0 {
@@ -137,7 +137,7 @@ func StartTun(fd int) error {
 
 	dev, err := openTunDevice(fd)
 	if err != nil {
-		CloseTunFd(fd)
+		closeTunFd(fd)
 		return fmt.Errorf("failed to open the tun device: %w", err)
 	}
 	st, err := startStack(dev, p)
@@ -152,10 +152,10 @@ func StartTun(fd int) error {
 	return nil
 }
 
-// StopTun stops the tunnel StartTun started, closing the TUN descriptor, and
+// stopTun stops the tunnel startTun started, closing the TUN descriptor, and
 // closes the connections still relayed through it. It is safe to call when
 // none runs.
-func StopTun() {
+func stopTun() {
 	fdMu.Lock()
 	active := fdActive
 	fdActive = nil
@@ -166,7 +166,7 @@ func StopTun() {
 		active.stack.Close()
 		// The app calls this on its main thread: a read that does not return
 		// after the descriptor is closed must not hold it up.
-		waitWithTimeout("StopTun", active.stack.Wait, 2*time.Second)
+		waitWithTimeout("stopTun", active.stack.Wait, 2*time.Second)
 	}
 	closeRelayedConns()
 }
@@ -194,7 +194,7 @@ var (
 	ioActive *ioTunnel
 )
 
-func StartTunIO(rw io.ReadWriter) error {
+func startTunIO(rw io.ReadWriter) error {
 	ioMu.Lock()
 	defer ioMu.Unlock()
 
@@ -228,7 +228,7 @@ func StartTunIO(rw io.ReadWriter) error {
 	return nil
 }
 
-func StopTunIO() {
+func stopTunIO() {
 	ioMu.Lock()
 	defer ioMu.Unlock()
 
@@ -240,8 +240,8 @@ func StopTunIO() {
 
 	active.stack.Close()
 	active.endpoint.Close()
-	waitWithTimeout("StopTunIO", active.endpoint.Wait, 2*time.Second)
-	waitWithTimeout("StopTunIO", active.stack.Wait, 2*time.Second)
+	waitWithTimeout("stopTunIO", active.endpoint.Wait, 2*time.Second)
+	waitWithTimeout("stopTunIO", active.stack.Wait, 2*time.Second)
 	closeRelayedConns()
 }
 

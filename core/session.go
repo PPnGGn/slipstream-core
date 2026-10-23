@@ -30,13 +30,13 @@ var errSessionRunning = errors.New("a session is already running")
 // the result: on success the tunnel closes it when Stop runs, on failure
 // StartFd closes it. A failed start leaves nothing running.
 func StartFd(configJson string, fd int, assetDir string) error {
-	handedOver := false // StartTun owns the descriptor from its call on
+	handedOver := false // startTun owns the descriptor from its call on
 	err := startSession(configJson, assetDir, func() error {
 		handedOver = true
-		return StartTun(fd)
+		return startTun(fd)
 	})
 	if err != nil && !handedOver {
-		CloseTunFd(fd)
+		closeTunFd(fd)
 	}
 	return err
 }
@@ -45,7 +45,7 @@ func StartFd(configJson string, fd int, assetDir string) error {
 // (iOS). A failed start leaves nothing running.
 func StartIO(configJson string, rw io.ReadWriter, assetDir string) error {
 	return startSession(configJson, assetDir, func() error {
-		return StartTunIO(rw)
+		return startTunIO(rw)
 	})
 }
 
@@ -79,7 +79,7 @@ func startSession(configJson, assetDir string, startTun func() error) (err error
 		sessionRunning = err == nil
 	}()
 
-	if err = StartXray(configJson, assetDir); err != nil {
+	if err = startXray(configJson, assetDir); err != nil {
 		return err
 	}
 	xrayUp = true
@@ -98,9 +98,9 @@ func startSession(configJson, assetDir string, startTun func() error) (err error
 func stopParts() (err error) {
 	for _, stop := range []func() error{
 		func() error { StopMemoryReturn(); return nil },
-		func() error { StopTun(); return nil },
-		func() error { StopTunIO(); return nil },
-		StopXray,
+		func() error { stopTun(); return nil },
+		func() error { stopTunIO(); return nil },
+		stopXray,
 	} {
 		if e := runStop(stop); e != nil && err == nil {
 			err = e
