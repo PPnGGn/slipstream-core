@@ -6,6 +6,9 @@
 *.aar
 *.framework
 
+# The copy of the Go toolchain that builds the iOS framework (make ios-toolchain)
+/.toolchain/
+
 # Go
 /bin/
 /dist/

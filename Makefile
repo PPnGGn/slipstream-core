@@ -34,7 +34,13 @@ IOS_XCFRAMEWORK_OUT := slipstreamcore-ios.xcframework
 LDFLAGS := -checklinkname=0 -s -w -X slipstream-core/core.buildCommit=$(COMMIT)
 ANDROID_TARGETS := android
 
-.PHONY: bind bind-android bind-ios build vet tidy check check-fmt test vuln lint check-xray-pin
+# The iOS framework is built with a copy of the Go toolchain in which one file is
+# replaced (package toolchain says why: Go does not know iOS has the AES and SHA
+# instructions and runs AES-GCM in software). `make ios-toolchain` makes the copy
+# once per version of Go; it is not in git (.toolchain/).
+IOS_GOROOT := $(CURDIR)/.toolchain/ios-go
+
+.PHONY: bind bind-android bind-ios ios-toolchain build vet tidy check check-fmt test vuln lint check-xray-pin
 
 # `make check` is what CI runs: formatting, vet, the tests under the race
 # detector, known vulnerabilities reachable from our code, and staticcheck. The
@@ -63,14 +69,22 @@ bind: bind-android bind-ios
 bind-android:
 	gomobile bind -ldflags="$(LDFLAGS)" -trimpath -target=$(ANDROID_TARGETS) -androidapi 21 -javapkg com.slipstream -o $(AAR_OUT) ./android
 
+ios-toolchain:
+	go run ./toolchain/cmd/iosgoroot -src "$$(go env GOROOT)" -dest "$(IOS_GOROOT)"
+
 # iOS device + simulator slices.
 # Works around a gomobile bug: the Info.plist it writes into each slice's
 # .framework claims MinimumOSVersion=100.0 (not a real iOS version). Swift's
 # `import` silently treats that as "incompatible with my deployment target"
 # and reports "no such module" with no hint why, so patch it back to our
 # actual deployment target (15.0, matches ios/Runner's IPHONEOS_DEPLOYMENT_TARGET).
-bind-ios:
-	gomobile bind -ldflags="$(LDFLAGS)" -trimpath -target=ios -o $(IOS_XCFRAMEWORK_OUT) ./ios
+#
+# The Go of the copy (ios-toolchain) is first in PATH and GOROOT, and
+# GOTOOLCHAIN=local keeps go from switching back to the one in the module cache;
+# gomobile runs the `go` it finds.
+bind-ios: ios-toolchain
+	PATH="$(IOS_GOROOT)/bin:$$PATH" GOROOT="$(IOS_GOROOT)" GOTOOLCHAIN=local \
+		gomobile bind -ldflags="$(LDFLAGS)" -trimpath -target=ios -o $(IOS_XCFRAMEWORK_OUT) ./ios
 	@for plist in $(IOS_XCFRAMEWORK_OUT)/*/*.framework/Info.plist; do \
 		plutil -replace MinimumOSVersion -string "15.0" "$$plist"; \
 	done

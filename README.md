@@ -26,6 +26,25 @@ make check          # what CI runs: gofmt, vet, go test -race, govulncheck, stat
 The bindings are stripped (`-s -w -trimpath`); `make bind-android ANDROID_TARGETS=android/arm64,android/arm`
 leaves out the emulator ABIs. See the comments in the `Makefile` for the reasons and the measured sizes.
 
+### The iOS framework and the AES instructions
+
+Go cannot ask iOS which extensions the processor has, so for `GOOS=ios` it takes the AES, PMULL and SHA ones as
+absent (`internal/cpu/cpu_arm64_other.go`) and the crypto packages run AES-GCM in software; for macOS it assumes
+them, and on Android it reads them from the kernel. On an iPhone 14 during a speed test at about 100 Mbit/s the
+software AES-GCM was 42% of the CPU time of the network extension (`gcm.openGeneric`, `ghashMul` and
+`encryptBlockGeneric` in a Time Profiler recording), and with the flags set the CPU per megabyte of traffic was 28%
+lower.
+
+`make bind-ios` therefore builds with a copy of the Go toolchain (`.toolchain/ios-go`, made once per version of Go,
+not in git) in which that one file says the extensions are there. `toolchain/` has the replacement, the hash of the
+file it replaces and the code that makes the copy. Not an overlay, because go refuses to replace files in the module
+cache, where the toolchain of `go.mod` lives; and not a flag set from our own `init`, because an AEAD that another
+package builds in its `init` would be set up without the hardware tables and then used with them.
+
+When a new Go ships another `cpu_arm64_other.go` (it may detect the extensions itself by then),
+`TestReplacementIsWrittenForTheFileGoShips` fails, and `make bind-ios` refuses the copy: see what changed, then pin
+the new hash in `toolchain/original.sha256` or drop the replacement.
+
 The commit of the core is stamped into the binary (`-X`, from `git rev-parse`, with `-dirty` after it when the tree
 has uncommitted changes) and `BuildCommit()` returns it, next to `Version()` for the xray inside: put both in a bug
 report. A build without the stamp (`go build`, `go test`) says `unknown`.

@@ -1,0 +1,23 @@
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This is cpu_arm64_other.go of Go as the iOS framework of slipstream-core is
+// built with it, see the toolchain directory of that repository. Only the body
+// of osInit differs from the file Go ships.
+
+//go:build arm64 && !linux && !freebsd && !android && (!darwin || ios) && !openbsd && !windows
+
+package cpu
+
+func osInit() {
+	// Go cannot ask iOS which extensions the processor has and took them all as
+	// absent, so AES-GCM ran in software: about 40% of the CPU time of a network
+	// extension at 100 Mbit/s. Every iPhone with a 64-bit processor has the
+	// cryptographic extensions of ARMv8, and Go assumes them the same way on Apple
+	// Silicon Macs (cpu_arm64_darwin.go).
+	ARM64.HasAES = true
+	ARM64.HasPMULL = true
+	ARM64.HasSHA1 = true
+	ARM64.HasSHA2 = true
+}
