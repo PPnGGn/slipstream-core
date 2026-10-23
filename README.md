@@ -32,8 +32,12 @@ Go cannot ask iOS which extensions the processor has, so for `GOOS=ios` it takes
 absent (`internal/cpu/cpu_arm64_other.go`) and the crypto packages run AES-GCM in software; for macOS it assumes
 them, and on Android it reads them from the kernel. On an iPhone 14 during a speed test at about 100 Mbit/s the
 software AES-GCM was 42% of the CPU time of the network extension (`gcm.openGeneric`, `ghashMul` and
-`encryptBlockGeneric` in a Time Profiler recording), and with the flags set the CPU per megabyte of traffic was 28%
-lower.
+`encryptBlockGeneric` in a Time Profiler recording). `MeasureAESGCM` of the `ios` package (debug builds; the `aes`
+command of the sampler of the app) shows it without a profiler: 35 MB/s with the toolchain from the module cache,
+2100 MB/s with the copy. Under the same load (three pages, the last the speed test of fast.com) the CPU time per
+megabyte of traffic was 79 ms with the stock toolchain and 51 and 50 ms in two runs with the copy; the figures of
+the other stock runs, with other mixes of traffic, were 98 and 135 ms. Memory did not change: the peak of the
+footprint under that load is 45 to 49 MB either way.
 
 `make bind-ios` therefore builds with a copy of the Go toolchain (`.toolchain/ios-go`, made once per version of Go,
 not in git) in which that one file says the extensions are there. `toolchain/` has the replacement, the hash of the
