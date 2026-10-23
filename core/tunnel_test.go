@@ -28,6 +28,33 @@ func (c *fakeRelayedConn) Close() error {
 	return nil
 }
 
+// Every UDP session of the tunnel holds two 64 KB relay buffers for as long as
+// it lives, and one lives for the timeout after its last packet: a burst of
+// single-shot flows (DNS from many apps at once) keeps that much memory for the
+// whole timeout. The timeout is therefore a setting, with tun2socks' own
+// default until someone sets another.
+func TestUDPTimeout(t *testing.T) {
+	t.Cleanup(func() { _ = SetUDPTimeout(defaultUDPTimeout) })
+
+	if got := UDPTimeout(); got != 60*time.Second {
+		t.Errorf("default UDP timeout = %v, want tun2socks' 60s", got)
+	}
+	if err := SetUDPTimeout(20 * time.Second); err != nil {
+		t.Fatalf("SetUDPTimeout(20s): %v", err)
+	}
+	if got := UDPTimeout(); got != 20*time.Second {
+		t.Errorf("UDPTimeout() = %v after SetUDPTimeout(20s)", got)
+	}
+	for _, bad := range []time.Duration{0, -time.Second} {
+		if err := SetUDPTimeout(bad); err == nil {
+			t.Errorf("SetUDPTimeout(%v) succeeded, want an error", bad)
+		}
+	}
+	if got := UDPTimeout(); got != 20*time.Second {
+		t.Errorf("UDPTimeout() = %v after refused values, want 20s kept", got)
+	}
+}
+
 // socketPair returns two connected datagram sockets: one stands in for the TUN
 // descriptor (one datagram per packet), the other for the kernel side. The
 // test owns b; a belongs to the code under test.

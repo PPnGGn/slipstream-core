@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	slipcore "slipstream-core/core"
 )
@@ -48,6 +49,12 @@ func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
 	if err := SetGCTuning(50, 0); err == nil {
 		t.Error("SetGCTuning() succeeded in a release build, want an error")
 	}
+	if err := SetUDPTimeout(5); err == nil {
+		t.Error("SetUDPTimeout() succeeded in a release build, want an error")
+	}
+	if got := slipcore.UDPTimeout(); got != 60*time.Second {
+		t.Errorf("UDP timeout = %v after a refused SetUDPTimeout, want 60s", got)
+	}
 	if left, _ := os.ReadDir(dir); len(left) != 0 {
 		t.Errorf("release build left %d files in the dump directory", len(left))
 	}
@@ -61,9 +68,16 @@ func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
 	t.Cleanup(func() {
 		slipcore.SetVerboseLogs(false)
 		_ = slipcore.SetGCTuning(20, 0)
+		_ = slipcore.SetUDPTimeout(60 * time.Second)
 	})
 	dir := t.TempDir()
 
+	if err := SetUDPTimeout(15); err != nil {
+		t.Errorf("SetUDPTimeout() in a debug build: %v", err)
+	}
+	if got := slipcore.UDPTimeout(); got != 15*time.Second {
+		t.Errorf("UDP timeout = %v after SetUDPTimeout(15), want 15s", got)
+	}
 	if _, err := WriteHeapProfile(dir, "x"); err != nil {
 		t.Errorf("WriteHeapProfile() in a debug build: %v", err)
 	}

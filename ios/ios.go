@@ -1,6 +1,8 @@
 package ios
 
 import (
+	"time"
+
 	slipcore "slipstream-core/core"
 )
 
@@ -139,6 +141,18 @@ func SetGCTuning(percent int, limitMB int) error {
 		return err
 	}
 	return slipcore.SetGCTuning(percent, int64(limitMB)<<20)
+}
+
+// SetUDPTimeout sets, in seconds, how long an idle UDP session of the tunnel
+// lives (60 by default). Every session holds two 64 KB relay buffers while it
+// lives. For measuring memory; applies to sessions that start after the call
+// and is kept across sessions of the process. Debug builds only, with the same
+// refusal as SetGCTuning.
+func SetUDPTimeout(seconds int) error {
+	if err := slipcore.RequireDebug(); err != nil {
+		return err
+	}
+	return slipcore.SetUDPTimeout(time.Duration(seconds) * time.Second)
 }
 
 // WriteHeapProfile writes the core's heap profile into dir as

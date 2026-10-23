@@ -97,6 +97,9 @@ func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
 	if err := SetGCTuning(50, 0); err == nil {
 		t.Error("SetGCTuning() succeeded in a release build, want an error")
 	}
+	if err := SetUDPTimeout(5); err == nil {
+		t.Error("SetUDPTimeout() succeeded in a release build, want an error")
+	}
 	if left, _ := os.ReadDir(dir); len(left) != 0 {
 		t.Errorf("release build left %d files in the dump directory", len(left))
 	}

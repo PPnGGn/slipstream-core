@@ -19,6 +19,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,6 +31,30 @@ const (
 	tcpBufferDefault = 256 << 10
 	tcpBufferMax     = 1 << 20
 )
+
+// defaultUDPTimeout is how long tun2socks keeps an idle UDP session by default.
+const defaultUDPTimeout = 60 * time.Second
+
+var udpTimeout atomic.Int64 // time.Duration, applied to sessions that start later
+
+func init() { udpTimeout.Store(int64(defaultUDPTimeout)) }
+
+// UDPTimeout is how long a UDP session of the tunnel may stay idle before it is
+// closed.
+func UDPTimeout() time.Duration { return time.Duration(udpTimeout.Load()) }
+
+// SetUDPTimeout sets the idle time after which a UDP session of the tunnel is
+// closed. Every session holds two 64 KB relay buffers while it lives, so the
+// timeout bounds how much memory a burst of short flows keeps. It applies to
+// sessions that start after the call and is kept across sessions.
+func SetUDPTimeout(d time.Duration) error {
+	if d <= 0 {
+		return fmt.Errorf("udp timeout %v: want > 0", d)
+	}
+	udpTimeout.Store(int64(d))
+	tunnel.T().SetUDPTimeout(d)
+	return nil
+}
 
 // startStack builds the network stack on link and hands every connection it
 // terminates to tun2socks' tunnel, which relays it to the local SOCKS inbound
@@ -45,6 +70,7 @@ func startStack(link stack.LinkEndpoint, p proxyParams, opts ...option.Option) (
 		return nil, fmt.Errorf("failed to build socks proxy: %w", err)
 	}
 	tunnel.T().SetProxy(px)
+	tunnel.T().SetUDPTimeout(UDPTimeout())
 
 	st, err := t2score.CreateStack(&t2score.Config{
 		LinkEndpoint:     link,
