@@ -260,6 +260,8 @@ func waitWithTimeout(what string, wait func(), timeout time.Duration) {
 	}
 }
 
+// FreeMemory runs a GC and hands every free page back to the OS. It blocks
+// while the GC runs, so call it off the main thread.
 func FreeMemory() {
 	debug.FreeOSMemory()
 }

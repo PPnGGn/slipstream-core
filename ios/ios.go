@@ -14,6 +14,8 @@ func init() {
 	slipcore.InstallLogForwarding()
 }
 
+// Handler is implemented by the app and receives the log lines of the core, see
+// slipcore.LogHandler. It is called from many goroutines and must return fast.
 type Handler interface {
 	OnLog(level string, message string, source string)
 }
@@ -24,6 +26,8 @@ func (a handlerAdapter) OnLog(level, message, source string) {
 	a.h.OnLog(level, message, source)
 }
 
+// SetHandler sets the receiver of the core's log lines; nil removes it. Set it
+// before Start to see the lines of the start itself.
 func SetHandler(h Handler) {
 	if h == nil {
 		slipcore.SetLogHandler(nil)
@@ -32,6 +36,11 @@ func SetHandler(h Handler) {
 	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
+// PacketFlow is the device, implemented by the Network Extension's bridge.
+// ReadPacket blocks until the next IP packet leaves the device and returns an
+// error when the flow is closed: that error ends the tunnel, so it must be
+// returned only then (empty packets are skipped). WritePacket delivers a packet
+// to the device; the slice is a copy the callee may keep.
 type PacketFlow interface {
 	ReadPacket() ([]byte, error)
 	WritePacket(packet []byte) error
@@ -97,11 +106,14 @@ func Version() string {
 	return slipcore.XrayVersion()
 }
 
+// TrafficStats are the bytes counted through the proxy outbound since Start.
 type TrafficStats struct {
 	UplinkBytes   int64
 	DownlinkBytes int64
 }
 
+// QueryTraffic reads the counters; zeros when no session runs or the config
+// does not count (see slipcore.OutboundTag). Cheap, safe to poll.
 func QueryTraffic() *TrafficStats {
 	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
@@ -127,6 +139,8 @@ type MemoryStats struct {
 	MemoryLimitBytes int64
 }
 
+// QueryMemory reads the Go runtime's memory now. It does not stop the world, so
+// it can be polled every second.
 func QueryMemory() *MemoryStats {
 	m := MemoryStats(slipcore.ReadMemorySnapshot())
 	return &m
@@ -175,6 +189,8 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
+// FreeMemory runs a GC and hands every free page back to the OS. It blocks while
+// the GC runs; the extension calls it from sleep().
 func FreeMemory() {
 	slipcore.FreeMemory()
 }

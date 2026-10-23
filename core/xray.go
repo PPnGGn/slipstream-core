@@ -12,6 +12,9 @@ import (
 	"github.com/xtls/xray-core/infra/conf/serial"
 )
 
+// OutboundTag is the tag of the outbound whose traffic QueryTraffic counts: the
+// config must call its proxy outbound that, and turn on the stats and the
+// policy.system.statsOutboundUplink/Downlink flags, or the counters stay at 0.
 const OutboundTag = "proxy"
 
 var (
@@ -151,6 +154,9 @@ func stopXray() error {
 	return inst.Close()
 }
 
+// QueryTraffic returns the bytes sent and received through the outbound tagged
+// OutboundTag since xray started, or 0, 0 when xray is not running or the
+// config does not count them. It does not wait for a start or stop in progress.
 func QueryTraffic() (uplink int64, downlink int64) {
 	uplink = trafficCounter("outbound>>>" + OutboundTag + ">>>traffic>>>uplink")
 	downlink = trafficCounter("outbound>>>" + OutboundTag + ">>>traffic>>>downlink")

@@ -24,6 +24,8 @@ func init() {
 	slipcore.InstallLogForwarding()
 }
 
+// Handler is implemented by the app and receives the log lines of the core, see
+// slipcore.LogHandler. It is called from many goroutines and must return fast.
 type Handler interface {
 	OnLog(level string, message string, source string)
 }
@@ -34,6 +36,8 @@ func (a handlerAdapter) OnLog(level, message, source string) {
 	a.h.OnLog(level, message, source)
 }
 
+// SetHandler sets the receiver of the core's log lines; nil removes it. Set it
+// before Start to see the lines of the start itself.
 func SetHandler(h Handler) {
 	if h == nil {
 		slipcore.SetLogHandler(nil)
@@ -77,11 +81,14 @@ func Version() string {
 	return slipcore.XrayVersion()
 }
 
+// TrafficStats are the bytes counted through the proxy outbound since Start.
 type TrafficStats struct {
 	UplinkBytes   int64
 	DownlinkBytes int64
 }
 
+// QueryTraffic reads the counters; zeros when no session runs or the config
+// does not count (see slipcore.OutboundTag). Cheap, safe to poll.
 func QueryTraffic() *TrafficStats {
 	up, down := slipcore.QueryTraffic()
 	return &TrafficStats{UplinkBytes: up, DownlinkBytes: down}
@@ -107,6 +114,8 @@ type MemoryStats struct {
 	MemoryLimitBytes int64
 }
 
+// QueryMemory reads the Go runtime's memory now. It does not stop the world, so
+// it can be polled every second.
 func QueryMemory() *MemoryStats {
 	m := MemoryStats(slipcore.ReadMemorySnapshot())
 	return &m

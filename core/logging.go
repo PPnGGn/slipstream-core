@@ -11,6 +11,10 @@ import (
 	"sync/atomic"
 )
 
+// LogHandler receives the log lines of the core: the level ("info", "warning",
+// "error", ...), the message and where it came from ("xray", "tun2socks",
+// "iobridge"). It is called from the goroutines that log, several at once and
+// on network paths, so it must return quickly.
 type LogHandler interface {
 	OnLog(level, message, source string)
 }
@@ -20,6 +24,8 @@ var (
 	logHandler LogHandler
 )
 
+// SetLogHandler sets where the log lines go; nil stops delivering them. Safe at
+// any time, also while the core runs.
 func SetLogHandler(h LogHandler) {
 	logMu.Lock()
 	logHandler = h
@@ -35,6 +41,7 @@ func emitLog(level, message, source string) {
 	}
 }
 
+// LogInfo and LogError send a line of the core itself to the handler.
 func LogInfo(message, source string)  { emitLog("info", message, source) }
 func LogError(message, source string) { emitLog("error", message, source) }
 
@@ -64,6 +71,9 @@ func RequireDebug() error {
 	return nil
 }
 
+// InstallLogForwarding routes the logs of xray and tun2socks to the handler,
+// filtered by level. The tun2socks logger reads the debug flag when it is
+// created, so this is called again at every start to pick up SetVerboseLogs.
 func InstallLogForwarding() {
 	xraylog.RegisterHandler(&xrayLogForwarder{})
 	tunlog.SetLogger(newTun2socksForwardingLogger())

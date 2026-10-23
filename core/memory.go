@@ -109,6 +109,7 @@ type CPUTimes struct {
 	UserSeconds float64
 }
 
+// ReadCPUTimes reads the CPU time the Go runtime has used so far.
 func ReadCPUTimes() CPUTimes {
 	samples := []metrics.Sample{{Name: metricGCCPU}, {Name: metricUserCPU}}
 	metrics.Read(samples)
