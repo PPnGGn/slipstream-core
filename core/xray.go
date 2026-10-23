@@ -19,6 +19,10 @@ var (
 	xrayInst *core.Instance
 )
 
+// buildXrayConfig is buildCoreConfig, a variable only so that a test can hold
+// StartXray inside the slow step.
+var buildXrayConfig = buildCoreConfig
+
 // StartXray builds and starts xray-core from configJson.
 //
 // assetDir, if non-empty, is where xray looks for geosite.dat / geoip.dat when
@@ -27,11 +31,15 @@ var (
 // are set — some libc reject env names with dots). GetAssetLocation re-reads the
 // env on every asset open and is not cached, so setting it here, before Build(),
 // is enough. Empty assetDir leaves xray's default (the executable's directory).
+//
+// mu guards only the xrayInst pointer and is never held while building or
+// starting: that takes seconds on a large geo config, and QueryTraffic, which
+// the app polls, needs mu. Callers are serialized by the session lock.
 func StartXray(configJson string, assetDir string) error {
 	mu.Lock()
-	defer mu.Unlock()
-
-	if xrayInst != nil {
+	running := xrayInst != nil
+	mu.Unlock()
+	if running {
 		return fmt.Errorf("xray is already running")
 	}
 
@@ -46,7 +54,7 @@ func StartXray(configJson string, assetDir string) error {
 		return err
 	}
 
-	coreConfig, err := buildCoreConfig(hardened, assetDir)
+	coreConfig, err := buildXrayConfig(hardened, assetDir)
 	if err != nil {
 		return err
 	}
@@ -65,7 +73,14 @@ func StartXray(configJson string, assetDir string) error {
 
 	InstallLogForwarding()
 
+	mu.Lock()
+	if xrayInst != nil { // another StartXray won; callers are meant to be serialized
+		mu.Unlock()
+		_ = inst.Close()
+		return fmt.Errorf("xray is already running")
+	}
 	xrayInst = inst
+	mu.Unlock()
 	// Published only once xray is really up: StartTun reads it next.
 	setActiveProxy(params)
 	return nil
@@ -119,19 +134,21 @@ func XrayVersion() string {
 	return core.Version()
 }
 
+// StopXray stops xray and withdraws the local proxy parameters. Closing the
+// instance happens outside mu, for the same reason StartXray does not hold it.
 func StopXray() error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	// Unconditional: the credentials must never outlive the session.
 	clearActiveProxy()
 
-	if xrayInst == nil {
+	mu.Lock()
+	inst := xrayInst
+	xrayInst = nil
+	mu.Unlock()
+
+	if inst == nil {
 		return nil
 	}
-	err := xrayInst.Close()
-	xrayInst = nil
-	return err
+	return inst.Close()
 }
 
 func QueryTraffic() (uplink int64, downlink int64) {

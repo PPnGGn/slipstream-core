@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xtls/xray-core/common/geodata"
+	xcore "github.com/xtls/xray-core/core"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -62,6 +64,40 @@ const geoConfig = `{
 		{"type":"field","ip":["geoip:test"],"outboundTag":"direct"}
 	]}
 }`
+
+// Building a big geo config takes seconds. The traffic counters are polled
+// meanwhile, and the poll must not wait for the build to end.
+func TestQueryTrafficDoesNotWaitForTheBuild(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	old := buildXrayConfig
+	buildXrayConfig = func(configJson, assetDir string) (*xcore.Config, error) {
+		close(entered)
+		<-release
+		return old(configJson, assetDir)
+	}
+	t.Cleanup(func() { buildXrayConfig = old })
+	t.Cleanup(func() { _ = StopXray() })
+
+	startDone := make(chan error, 1)
+	go func() { startDone <- StartXray(hardenSample, "") }()
+	<-entered // StartXray is inside the build
+
+	polled := make(chan struct{})
+	go func() {
+		QueryTraffic()
+		close(polled)
+	}()
+	select {
+	case <-polled:
+	case <-time.After(time.Second):
+		t.Error("QueryTraffic is still waiting for the build after a second")
+	}
+
+	close(release)
+	if err := <-startDone; err != nil {
+		t.Fatalf("StartXray: %v", err)
+	}
+}
 
 // The asset directory is process-global environment. A session that passes no
 // directory must get xray's default, not the directory of the session before
