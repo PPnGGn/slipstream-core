@@ -10,7 +10,6 @@ package android
 
 import (
 	"errors"
-	"fmt"
 
 	slipcore "slipstream-core/core"
 )
@@ -52,33 +51,18 @@ func SetVerboseLogs(on bool) {
 
 // Start starts xray and tun2socks. fd is the TUN descriptor, already detached
 // from the app's ParcelFileDescriptor: Start owns it from the call on and
-// closes it when it fails, so the app must not close it either way.
-func Start(configJson string, fd int, assetDir string) (err error) {
-	handedOver := false // StartTun owns the descriptor from its call on
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("android.Start: panic recovered: %v", r)
-		}
-		if err != nil && !handedOver {
-			slipcore.CloseTunFd(fd)
-		}
-	}()
-	if err := slipcore.StartXray(configJson, assetDir); err != nil {
-		return err
-	}
-	handedOver = true
-	if err := slipcore.StartTun(fd); err != nil {
-		_ = slipcore.StopXray()
-		return err
-	}
-	slipcore.StartMemoryReturn()
-	return nil
+// closes it when it fails, so the app must not close it either way. It blocks
+// for as long as building the config takes (seconds with a large geo config),
+// so it does not belong on the main thread. A failed Start leaves nothing
+// running; a Start while a session runs is refused.
+func Start(configJson string, fd int, assetDir string) error {
+	return slipcore.StartFd(configJson, fd, assetDir)
 }
 
+// Stop ends the session. Safe to call at any time and any number of times; if
+// a Start is still working, Stop waits for it and then stops what it started.
 func Stop() error {
-	slipcore.StopMemoryReturn()
-	slipcore.StopTun()
-	err := slipcore.StopXray()
+	err := slipcore.Stop()
 	// The stopped session is garbage now. Left alone it waits for the next GC
 	// and then goes back to the OS bit by bit — minutes under light traffic,
 	// so after a switch the monitor kept showing the previous, heavier session.

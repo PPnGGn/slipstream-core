@@ -1,7 +1,6 @@
 package ios
 
 import (
-	"fmt"
 	"io"
 	"runtime/debug"
 	slipcore "slipstream-core/core"
@@ -59,25 +58,16 @@ func (p packetFlowRW) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func Start(configJson string, flow PacketFlow, assetDir string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("ios.Start: panic recovered: %v", r)
-		}
-	}()
-	if err := slipcore.StartXray(configJson, assetDir); err != nil {
-		return err
-	}
-	if err := slipcore.StartTunIO(packetFlowRW{flow: flow}); err != nil {
-		_ = slipcore.StopXray()
-		return err
-	}
-	return nil
+// Start starts xray and the tunnel over flow. A failed Start leaves nothing
+// running; a Start while a session runs is refused.
+func Start(configJson string, flow PacketFlow, assetDir string) error {
+	return slipcore.StartIO(configJson, packetFlowRW{flow: flow}, assetDir)
 }
 
+// Stop ends the session. Safe to call at any time and any number of times; if
+// a Start is still working, Stop waits for it and then stops what it started.
 func Stop() error {
-	slipcore.StopTunIO()
-	return slipcore.StopXray()
+	return slipcore.Stop()
 }
 
 type TrafficStats struct {
