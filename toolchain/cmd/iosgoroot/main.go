@@ -26,6 +26,7 @@ func main() {
 		os.Exit(1)
 	}
 	if created {
-		fmt.Fprintf(os.Stderr, "iosgoroot: %s is a copy of %s that tells iOS the processor has AES and SHA\n", *dest, *src)
+		fmt.Fprintf(os.Stderr, "iosgoroot: %s is a copy of %s with the changes of package toolchain "+
+			"(the AES and SHA instructions of iOS, the buffers of HTTP/2 streams)\n", *dest, *src)
 	}
 }

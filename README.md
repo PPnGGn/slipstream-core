@@ -44,8 +44,19 @@ body, the size of `min(the frame size of the server, 512 KB)`. With XHTTP that i
 the live heap of the extension during a speed test (the profile is `writeRequestBody` through `sync.Pool`), and at
 130 to 260 Mbit/s the extension was killed in 4 runs of 6 (it restarts, with the footprint at 48 to 49 MB just
 before; iOS leaves no log of it). Capped at 16 KB, the frame size every peer accepts and a sender may always use,
-the same test did not kill it in 3 runs of 3, with 670 to 1000 MB moved in each. The cap is one line of
-`net/http/internal/http2/transport.go`. A server that allows frames of 16 KB only never had the problem.
+the same test did not kill it in 3 runs of 3, with 670 to 1000 MB moved in each. In a series without the cap, with
+it, without, with (two speed tests each, on the AES change alone and on both), the extension was killed in 2 of 4
+runs without it (one of them twice) and in 0 of 4 with it, the peak of the footprint was 35 to 48 MB without it and
+26 to 39 MB with it, and the speed of the download did not fall (best second 346 to 416 Mbit/s with the cap, 320 to
+378 without). The cap is one line of `net/http/internal/http2/transport.go`. A server that allows frames of 16 KB
+only never had the problem.
+
+The price is in the upload, in CPU, not in memory: through the HTTP/2 client over loopback a streaming upload ran at
+1275 MB/s with the 16 KB cap and 1700 MB/s without (smaller frames, more of them), a difference a phone's network
+never shows (tens of Mbit/s against 10 Gbit/s). A cap of 64 KB ran at 1710 to 1740 MB/s, the same as without, and
+costs 25 streams x 64 KB = 1.6 MB instead of 0.4: on the iPhone it was not killed in 2 runs of 2 (peaks 42 and
+34 MB, one more run moved no traffic). To use it, change `scratchNew` in `toolchain/toolchain.go` and the two tests
+that name `16 << 10`; the pinned hash is of the file as Go ships it and stays.
 
 `make bind-ios` therefore builds with a copy of the Go toolchain (`.toolchain/ios-go`, made once per version of Go,
 not in git) in which the file of the processor says the extensions are there and the HTTP/2 client has the cap of
