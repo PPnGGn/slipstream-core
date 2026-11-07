@@ -42,6 +42,13 @@ func newXrayProxy(inst *xcore.Instance, level uint32) *xrayProxy {
 // sniffing of the host name of HTTP and TLS for routing only (the connection
 // still goes to the original address).
 //
+// "fakedns" is the exception to "only for routing". With Fake DNS on (the
+// config lists "fakedns" among its DNS servers) the app was told a made-up
+// address, which leads nowhere: the connection has to go to the name behind it,
+// and for anything but HTTP and TLS that name is known from the address alone.
+// xray only looks an address up in its fake pool when the config has one, so
+// this entry changes nothing for a config without Fake DNS.
+//
 // The context is detached from the one tun2socks dials with, which it cancels
 // as soon as the dial returns, while xray ties the life of the connection to the
 // context it was dispatched with. The returned cancel ends the connection.
@@ -61,7 +68,7 @@ func (p *xrayProxy) newContext(md *M.Metadata, network xnet.Network) (context.Co
 	return session.ContextWithContent(ctx, &session.Content{
 		SniffingRequest: session.SniffingRequest{
 			Enabled:                        true,
-			OverrideDestinationForProtocol: []string{"http", "tls"},
+			OverrideDestinationForProtocol: []string{"http", "tls", "fakedns"},
 			RouteOnly:                      true,
 		},
 	}), cancel
