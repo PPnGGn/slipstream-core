@@ -175,6 +175,20 @@ func TestClientConfigsBuildAndStart(t *testing.T) {
 				{"protocol":"freedom","settings":{},"tag":"direct"}
 			]
 		}`,
+		// The Fragment setting of the app: a tcp mask on the proxy outbound, here
+		// over REALITY, where it cuts the ClientHello before REALITY writes it.
+		"vless_reality_fragment": `{
+			"outbounds":[
+				{"protocol":"vless","settings":{"vnext":[{"address":"1.2.3.4","port":443,"users":[{"id":"11111111-1111-1111-1111-111111111111","encryption":"none","flow":"xtls-rprx-vision","level":8}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"publicKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","serverName":"example.com","shortId":"","fingerprint":"chrome"},"tcpSettings":{"header":{"type":"none"}},"finalmask":{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}]}},"tag":"proxy"}
+			]
+		}`,
+		// The Noise setting of the app: a udp mask, next to the salamander mask
+		// buildHysteria2 writes. Noise comes first, nearest to the wire.
+		"hysteria2_noise": `{
+			"outbounds":[
+				{"protocol":"hysteria","settings":{"version":2,"address":"1.2.3.4","port":443},"streamSettings":{"network":"hysteria","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"hysteriaSettings":{"version":2,"auth":"pw"},"finalmask":{"udp":[{"type":"noise","settings":{"reset":"0-0","noise":[{"rand":"10-20","delay":"10-16"}]}},{"type":"salamander","settings":{"password":"obfs"}}]}},"tag":"proxy"}
+			]
+		}`,
 		// JSON-sub shapes the custom parser passes through: exercise the
 		// remaining transports/security the curated set claims to support.
 		"vmess_ws": `{
