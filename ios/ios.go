@@ -133,6 +133,18 @@ func SetVerboseLogs(on bool) {
 	slipcore.SetVerboseLogs(on)
 }
 
+// MeasureDelay is the "Real delay" of one server: how many milliseconds a GET to
+// url takes through the `proxy` outbound of configJson, the second request on
+// a connection the first one opened. An error is a server that carries nothing:
+// timeout, refused, an answer that is not 2xx. timeoutMs covers the whole call.
+//
+// It starts an xray of its own and closes it before it returns, and may run
+// while a session is up without touching it. It blocks for up to timeoutMs.
+// assetDir is the folder of the geo bases, "" keeps what a session set.
+func MeasureDelay(configJson string, assetDir string, url string, timeoutMs int) (int64, error) {
+	return slipcore.MeasureDelay(configJson, assetDir, url, timeoutMs)
+}
+
 // Version returns the embedded xray-core version, e.g. "26.9.9".
 func Version() string {
 	return slipcore.XrayVersion()

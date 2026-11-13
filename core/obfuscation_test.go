@@ -104,6 +104,64 @@ func TestFinalMaskFragmentCutsTheFirstWrite(t *testing.T) {
 	}
 }
 
+// The app writes Noise first in the list, ahead of the salamander mask that
+// Hysteria2 obfuscation adds. xray then obfuscates the noise datagram like the
+// rest: 8 bytes of salt on top of its own size, so the wire shows one more
+// random-looking datagram before the QUIC ones, not a raw run of junk.
+func TestFinalMaskNoiseNextToSalamanderIsObfuscatedToo(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pc.Close() })
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+
+	first := make(chan int, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, err := pc.ReadFrom(buf)
+		if err == nil {
+			first <- n
+		}
+	}()
+
+	p := startBridgeConfig(t, fmt.Sprintf(`{
+		"outbounds": [{
+			"protocol": "hysteria",
+			"settings": {"version": 2, "address": "127.0.0.1", "port": %d},
+			"streamSettings": {
+				"network": "hysteria",
+				"security": "tls",
+				"tlsSettings": {"serverName": "example.com", "alpn": ["h3"]},
+				"hysteriaSettings": {"version": 2, "auth": "pw"},
+				"finalmask": {"udp": [
+					{"type": "noise", "settings": {"noise": [{"rand": "33-33", "delay": "1-1"}]}},
+					{"type": "salamander", "settings": {"password": "obfs"}}
+				]}
+			},
+			"tag": "proxy"
+		}]
+	}`, port))
+
+	c, err := p.DialContext(context.Background(), metadata(M.TCP, echoTCP(t)))
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case n := <-first:
+		if n != 33+8 {
+			t.Fatalf("the first datagram is %d bytes, want the 33 bytes of noise and 8 of salamander salt", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the server got no datagram at all")
+	}
+}
+
 func TestFinalMaskNoiseGoesAheadOfTheFirstDatagram(t *testing.T) {
 	// A VLESS client over mKCP, which is udp. The 33 bytes are not a size mKCP
 	// or VLESS write on their own, so a datagram of that size is the noise.

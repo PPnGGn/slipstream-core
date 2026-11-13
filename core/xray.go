@@ -144,7 +144,13 @@ func setAssetDir(assetDir string) {
 // file present fails at this step, before anything starts.
 func buildCoreConfig(configJson string, assetDir string) (*core.Config, error) {
 	setAssetDir(assetDir)
+	return decodeCoreConfig(configJson)
+}
 
+// decodeCoreConfig is buildCoreConfig without the asset directory: it leaves
+// the process-global variables alone, for a caller that runs beside a session
+// and must not change what the session set (see MeasureDelay).
+func decodeCoreConfig(configJson string) (*core.Config, error) {
 	pbConfig, err := serial.DecodeJSONConfig(bytes.NewReader([]byte(configJson)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode config: %w", err)

@@ -71,6 +71,19 @@ func Start(configJson string, fd int, assetDir string, httpSocket string) error 
 	return slipcore.StartFd(configJson, fd, assetDir, httpSocket)
 }
 
+// MeasureDelay is the "Real delay" of one server: how many milliseconds a GET to
+// url takes through the `proxy` outbound of configJson, the second request on
+// a connection the first one opened. An error is a server that carries nothing:
+// timeout, refused, an answer that is not 2xx. timeoutMs covers the whole call.
+//
+// It starts an xray of its own and closes it before it returns, and may run
+// while a session is up without touching it. It blocks for up to timeoutMs, so
+// it does not belong on the main thread. assetDir is the folder of the geo
+// bases (the rules of the config read them), "" keeps what a session set.
+func MeasureDelay(configJson string, assetDir string, url string, timeoutMs int) (int64, error) {
+	return slipcore.MeasureDelay(configJson, assetDir, url, timeoutMs)
+}
+
 // Stop ends the session. Safe to call at any time and any number of times; if
 // a Start is still working, Stop waits for it and then stops what it started.
 func Stop() error {
