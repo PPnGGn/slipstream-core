@@ -99,6 +99,74 @@ func startStack(link stack.LinkEndpoint, px proxy.Proxy, opts ...option.Option) 
 	return st, nil
 }
 
+// --- the loss of the tunnel --------------------------------------------------
+
+// TunnelHandler is told when a running session's tunnel dies under it: the
+// device the packets come from stopped delivering them (a read on it failed),
+// while nobody asked the core to stop. xray and the interface are still up
+// then, and nothing in the app would notice: the traffic just stops. What to do
+// about it (hold the traffic, alert, reconnect) is the app's decision; the core
+// does not stop the session itself.
+//
+// OnTunnelLost is called once per tunnel, from a goroutine of the core that
+// holds no lock, so the handler may call back into the core (Stop included).
+type TunnelHandler interface {
+	OnTunnelLost(reason string)
+}
+
+var (
+	tunnelHandlerMu sync.Mutex
+	tunnelHandler   TunnelHandler
+)
+
+// SetTunnelHandler sets the receiver of the loss of the tunnel; nil removes it.
+// Safe at any time, also while a session runs.
+func SetTunnelHandler(h TunnelHandler) {
+	tunnelHandlerMu.Lock()
+	tunnelHandler = h
+	tunnelHandlerMu.Unlock()
+}
+
+func reportTunnelLost(reason string) {
+	emitLog("warning", "tunnel lost: "+reason, "core")
+	tunnelHandlerMu.Lock()
+	h := tunnelHandler
+	tunnelHandlerMu.Unlock()
+	if h != nil {
+		h.OnTunnelLost(reason)
+	}
+}
+
+// watchTunnel waits for the device of a tunnel to end its reads and reports a
+// loss when the tunnel is still the active one by then. stopTun and stopTunIO
+// make a tunnel inactive before they close its device, so the end that
+// follows a stop, or a switch to another tunnel, is not a loss. Run it in a
+// goroutine of its own.
+func watchTunnel(wait func(), active func() bool, reason string) {
+	wait()
+	if active() {
+		reportTunnelLost(reason)
+	}
+}
+
+// DropTun pulls the device of the running tunnel out from under the session, as
+// if the system had taken it away: the reads end and the loss is reported. The
+// session is left as it is and still stops the usual way. For testing what the
+// app does about a loss, so debug builds only (see RequireDebug).
+func DropTun() error {
+	if err := RequireDebug(); err != nil {
+		return err
+	}
+	fdMu.Lock()
+	active := fdActive
+	fdMu.Unlock()
+	if active == nil {
+		return fmt.Errorf("drop tun: no tunnel is running")
+	}
+	active.device.Close()
+	return nil
+}
+
 // --- fd-based path (Android) -------------------------------------------------
 
 type fdTunnel struct {
@@ -161,7 +229,17 @@ func startTun(fd int) error {
 		dev.Close() // closes the descriptor with it
 		return err
 	}
-	fdActive = &fdTunnel{device: dev, stack: st}
+	active := &fdTunnel{device: dev, stack: st}
+	fdActive = active
+	go watchTunnel(
+		dev.Wait,
+		func() bool {
+			fdMu.Lock()
+			defer fdMu.Unlock()
+			return fdActive == active
+		},
+		"the TUN device stopped delivering packets",
+	)
 
 	InstallLogForwarding()
 
@@ -237,7 +315,17 @@ func startTunIO(rw io.ReadWriter) error {
 		return err
 	}
 
-	ioActive = &ioTunnel{endpoint: ep, stack: st}
+	active := &ioTunnel{endpoint: ep, stack: st}
+	ioActive = active
+	go watchTunnel(
+		ep.Wait,
+		func() bool {
+			ioMu.Lock()
+			defer ioMu.Unlock()
+			return ioActive == active
+		},
+		"the packet source stopped delivering packets",
+	)
 
 	InstallLogForwarding()
 

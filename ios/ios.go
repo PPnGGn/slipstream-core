@@ -126,6 +126,37 @@ func Stop() error {
 	return slipcore.Stop()
 }
 
+// StatusHandler is implemented by the app and is told about what happens to a
+// running session that nobody asked for, see slipstream core.TunnelHandler. The
+// iOS app does not set one yet: the extension is not verified (AGENTS.md).
+type StatusHandler interface {
+	// OnTunnelLost: the packet source stopped delivering packets while the
+	// session runs. Called once per tunnel from a goroutine of the core that
+	// holds no lock. The core does not stop the session itself.
+	OnTunnelLost(reason string)
+}
+
+type statusAdapter struct{ h StatusHandler }
+
+func (a statusAdapter) OnTunnelLost(reason string) { a.h.OnTunnelLost(reason) }
+
+// SetStatusHandler sets the receiver of the loss of the tunnel; nil removes it.
+func SetStatusHandler(h StatusHandler) {
+	if h == nil {
+		slipcore.SetTunnelHandler(nil)
+		return
+	}
+	slipcore.SetTunnelHandler(statusAdapter{h: h})
+}
+
+// DropTun pulls the device of the running tunnel out from under the session,
+// for trying out the reaction to a loss. Debug builds only, with the same
+// refusal as SetGCTuning. It acts on the fd tunnel of Android, which iOS does
+// not have, so here it always says there is none.
+func DropTun() error {
+	return slipcore.DropTun()
+}
+
 // SetVerboseLogs turns on info-level core logs (xray access + DNS log,
 // tun2socks connections) from the next Start. Debug builds only: the app
 // passes its own debug flag, so release builds never call it with true.

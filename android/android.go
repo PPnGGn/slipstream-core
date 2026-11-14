@@ -49,6 +49,39 @@ func SetHandler(h Handler) {
 	slipcore.SetLogHandler(handlerAdapter{h: h})
 }
 
+// StatusHandler is implemented by the app and is told about what happens to a
+// running session that nobody asked for, see slipstream core.TunnelHandler.
+type StatusHandler interface {
+	// OnTunnelLost: the device the packets come from stopped delivering them
+	// while the session runs, xray and the interface still up, so the traffic has
+	// stopped without a word. Called once per tunnel from a goroutine of the core
+	// that holds no lock: Stop may be called from it. The core does not stop the
+	// session itself, that is the app's decision (hold the traffic or close).
+	OnTunnelLost(reason string)
+}
+
+type statusAdapter struct{ h StatusHandler }
+
+func (a statusAdapter) OnTunnelLost(reason string) { a.h.OnTunnelLost(reason) }
+
+// SetStatusHandler sets the receiver of the loss of the tunnel; nil removes it.
+// Set it before Start.
+func SetStatusHandler(h StatusHandler) {
+	if h == nil {
+		slipcore.SetTunnelHandler(nil)
+		return
+	}
+	slipcore.SetTunnelHandler(statusAdapter{h: h})
+}
+
+// DropTun pulls the device of the running tunnel out from under the session, as
+// if the system had taken it away: the loss is reported to the StatusHandler
+// and the session stays up until Stop. For trying out what the app does about
+// a loss. Debug builds only, with the same refusal as SetGCTuning.
+func DropTun() error {
+	return slipcore.DropTun()
+}
+
 // SetVerboseLogs turns on info-level core logs (xray access + DNS log,
 // tun2socks connections) from the next Start. Debug builds only: the app
 // passes its own debuggable flag, so release builds never call it with true.
