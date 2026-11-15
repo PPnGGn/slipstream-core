@@ -77,6 +77,19 @@ func SetUDPTimeout(d time.Duration) error {
 	return nil
 }
 
+// tcpBufferOptions are the TCP buffer ranges of the iOS tunnel, which lives under
+// the 50 MB of the extension. The Android tunnel keeps the stack's own defaults
+// (4 KB / 1 MB / 4 MB) on purpose: with these ranges on the phone (2026-11-15,
+// 3 x 8 parallel downloads of 16 MB through the tunnel) the speed was the same
+// and the memory was higher, retained up to 50 MB against 34-37 MB. See
+// next-releases.md, part 2, step 2.
+func tcpBufferOptions() []option.Option {
+	return []option.Option{
+		option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+		option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
+	}
+}
+
 // startStack builds the network stack on link and hands every connection it
 // terminates to tun2socks' tunnel, which relays it through px: the bridge to
 // xray (see xrayProxy).
@@ -306,10 +319,7 @@ func startTunIO(rw io.ReadWriter) error {
 		return fmt.Errorf("failed to create io endpoint: %w", err)
 	}
 
-	st, err := startStack(ep, px,
-		option.WithTCPSendBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
-		option.WithTCPReceiveBufferSizeRange(tcpBufferMin, tcpBufferDefault, tcpBufferMax),
-	)
+	st, err := startStack(ep, px, tcpBufferOptions()...)
 	if err != nil {
 		ep.Close()
 		return err
