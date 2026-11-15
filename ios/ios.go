@@ -273,6 +273,17 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
+// WriteCPUProfile samples the CPU of the process for the given seconds (1 to
+// 120) and writes the profile into dir as cpu[-name].pprof, returning the path.
+// It blocks for the whole time. Debug builds only, with the same refusal as
+// SetGCTuning.
+func WriteCPUProfile(dir string, name string, seconds int) (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return slipcore.WriteCPUProfile(dir, name, seconds)
+}
+
 // MeasureAESGCM encrypts for a third of a second with AES-GCM and returns the
 // speed, "2330 MB/s". Software AES-GCM is tens of MB/s and the instructions of
 // the processor several GB/s, so it shows which one this framework uses: Go does

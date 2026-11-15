@@ -239,6 +239,18 @@ func WriteGoroutineDump(dir string, name string) (string, error) {
 	return slipcore.WriteGoroutineDump(dir, name)
 }
 
+// WriteCPUProfile samples the CPU of the process for the given seconds (1 to
+// 120) and writes the profile into dir (the app's filesDir) as cpu[-name].pprof,
+// returning the path. It blocks for the whole time: call it off the main
+// thread. Debug builds only, on an adb broadcast and with the same refusal as
+// WriteHeapProfile.
+func WriteCPUProfile(dir string, name string, seconds int) (string, error) {
+	if err := slipcore.RequireDebug(); err != nil {
+		return "", err
+	}
+	return slipcore.WriteCPUProfile(dir, name, seconds)
+}
+
 // MeasureAESGCM encrypts for a third of a second with AES-GCM and returns the
 // speed, "2330 MB/s": tens of MB/s means Go runs it in software, several GB/s
 // that it uses the instructions of the processor. Debug builds only, with the

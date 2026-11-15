@@ -116,6 +116,9 @@ func TestDebugCommandsNeedVerboseLogs(t *testing.T) {
 	if path, err := WriteGoroutineDump(dir, "x"); err == nil {
 		t.Errorf("WriteGoroutineDump() = %q in a release build, want an error", path)
 	}
+	if path, err := WriteCPUProfile(dir, "x", 1); err == nil {
+		t.Errorf("WriteCPUProfile() = %q in a release build, want an error", path)
+	}
 	if err := SetGCTuning(50, 0); err == nil {
 		t.Error("SetGCTuning() succeeded in a release build, want an error")
 	}
@@ -146,6 +149,9 @@ func TestDebugCommandsWorkInDebugBuilds(t *testing.T) {
 	}
 	if _, err := WriteGoroutineDump(dir, "x"); err != nil {
 		t.Errorf("WriteGoroutineDump() in a debug build: %v", err)
+	}
+	if _, err := WriteCPUProfile(dir, "x", 1); err != nil {
+		t.Errorf("WriteCPUProfile() in a debug build: %v", err)
 	}
 	if got, err := MeasureAESGCM(); err != nil || !strings.HasSuffix(got, " MB/s") {
 		t.Errorf("MeasureAESGCM() in a debug build = %q, %v; want a speed in MB/s", got, err)
