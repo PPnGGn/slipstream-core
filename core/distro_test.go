@@ -163,7 +163,7 @@ func TestClientConfigsBuildAndStart(t *testing.T) {
 			],
 			"outbounds":[
 				{"protocol":"vless","settings":{"vnext":[{"address":"1.2.3.4","port":443,"users":[{"id":"11111111-1111-1111-1111-111111111111","encryption":"none","flow":"xtls-rprx-vision","level":8}]}]},"streamSettings":{"network":"tcp","security":"reality","realitySettings":{"publicKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","serverName":"example.com","shortId":"","fingerprint":"chrome"},"tcpSettings":{"header":{"type":"none"}}},"tag":"proxy"},
-				{"protocol":"freedom","settings":{"domainStrategy":"UseIP"},"tag":"direct"},
+				{"protocol":"freedom","streamSettings":{"sockopt":{"domainStrategy":"UseIP"}},"tag":"direct"},
 				{"protocol":"blackhole","settings":{"response":{"type":"http"}},"tag":"block"}
 			]
 		}`,

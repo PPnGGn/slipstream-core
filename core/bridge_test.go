@@ -264,7 +264,7 @@ func startFakeDNSBridge(t *testing.T, rules string) *xrayProxy {
 			"queryStrategy": "UseIPv4"
 		},
 		"outbounds": [
-			{"protocol": "freedom", "tag": "direct", "settings": {"domainStrategy": "UseIP"}},
+			{"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"domainStrategy": "UseIP"}}},
 			{"protocol": "blackhole", "tag": "block"}
 		],
 		"routing": {"rules": %s}
