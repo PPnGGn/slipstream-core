@@ -2,7 +2,6 @@ package core
 
 import (
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -53,18 +52,6 @@ func (r *lostRecorder) waitLoss(t *testing.T) {
 	}
 }
 
-// pipePair returns the read end, which stands in for the TUN descriptor, and
-// the write end, which the test closes to end the reads, like a device that
-// goes away.
-func pipePair(t *testing.T) (r, w int) {
-	t.Helper()
-	var fds [2]int
-	if err := syscall.Pipe(fds[:]); err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	return fds[0], fds[1]
-}
-
 func TestTunnelLossIsReportedWhenTheDeviceStopsReading(t *testing.T) {
 	startableProxy(t)
 	useFileDevices(t)
@@ -75,7 +62,7 @@ func TestTunnelLossIsReportedWhenTheDeviceStopsReading(t *testing.T) {
 	}
 	t.Cleanup(stopTun)
 
-	syscall.Close(w) // the other end of the device is gone: the next read fails
+	closeFd(w) // the other end of the device is gone: the next read fails
 
 	lost.waitLoss(t)
 	if got := lost.reasons[0]; got == "" {
@@ -91,7 +78,7 @@ func TestTunnelLossIsReportedOnce(t *testing.T) {
 	if err := startTun(r); err != nil {
 		t.Fatalf("startTun: %v", err)
 	}
-	syscall.Close(w)
+	closeFd(w)
 	lost.waitLoss(t)
 
 	stopTun() // cleaning up after the loss must not report another one
@@ -152,7 +139,7 @@ func TestTunnelLossWithNoHandlerIsHarmless(t *testing.T) {
 	}
 	t.Cleanup(stopTun)
 
-	syscall.Close(w)
+	closeFd(w)
 
 	time.Sleep(300 * time.Millisecond) // a panic in the watcher would end the test run
 }

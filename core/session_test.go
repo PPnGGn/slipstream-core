@@ -3,7 +3,6 @@ package core
 import (
 	"errors"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -46,29 +45,39 @@ func memoryReturnRuns() bool {
 // stop doing it with the session. iOS, where the extension lives under a hard
 // memory limit, needs it at least as much as Android.
 func TestSessionReturnsMemoryOnBothPaths(t *testing.T) {
-	useFileDevices(t)
 	t.Cleanup(func() { _ = Stop() })
-	a, _ := socketPair(t)
 
-	for name, start := range map[string]func() error{
-		"fd": func() error { return StartFd(hardenSample, a, "", "") },
-		"io": func() error { return StartIO(hardenSample, eofReadWriter{}, "") },
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := start(); err != nil {
-				t.Fatalf("start: %v", err)
-			}
-			if !memoryReturnRuns() {
-				t.Error("no memory return loop while the session runs")
-			}
-			if err := Stop(); err != nil {
-				t.Fatalf("Stop: %v", err)
-			}
-			if memoryReturnRuns() {
-				t.Error("the memory return loop outlived the session")
-			}
-		})
-	}
+	t.Run("io", func(t *testing.T) {
+		if err := StartIO(hardenSample, eofReadWriter{}, ""); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		if !memoryReturnRuns() {
+			t.Error("no memory return loop while the session runs")
+		}
+		if err := Stop(); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		if memoryReturnRuns() {
+			t.Error("the memory return loop outlived the session")
+		}
+	})
+
+	t.Run("fd", func(t *testing.T) {
+		useFileDevices(t)
+		a, _ := socketPair(t)
+		if err := StartFd(hardenSample, a, "", ""); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		if !memoryReturnRuns() {
+			t.Error("no memory return loop while the session runs")
+		}
+		if err := Stop(); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		if memoryReturnRuns() {
+			t.Error("the memory return loop outlived the session")
+		}
+	})
 }
 
 // The Network Extension of iOS lives under a limit of about 50 MB, and a UDP
@@ -177,7 +186,7 @@ func TestSessionFdStartsAndStops(t *testing.T) {
 	}
 	nothingRuns(t)
 	if fdIsOpen(a) {
-		syscall.Close(a)
+		closeFd(a)
 		t.Errorf("descriptor %d is still open after Stop", a)
 	}
 	if err := Stop(); err != nil {
@@ -213,7 +222,7 @@ func TestSessionRefusesASecondStart(t *testing.T) {
 		t.Fatal("a second StartFd succeeded while a session runs")
 	}
 	if fdIsOpen(c) {
-		syscall.Close(c)
+		closeFd(c)
 		t.Errorf("descriptor %d of the refused start is still open", c)
 	}
 	if _, ok := liveProxy(); !ok || !fdIsOpen(a) {
@@ -247,7 +256,7 @@ func TestSessionFailedXrayStartClosesTheDescriptor(t *testing.T) {
 	}
 	nothingRuns(t)
 	if fdIsOpen(a) {
-		syscall.Close(a)
+		closeFd(a)
 		t.Errorf("descriptor %d is still open after a failed start", a)
 	}
 }

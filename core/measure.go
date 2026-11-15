@@ -69,10 +69,12 @@ func MeasureDelay(configJson, assetDir, rawURL string, timeoutMs int) (int64, er
 	measureMu.Lock()
 	defer measureMu.Unlock()
 
+	assetMu.Lock()
 	if assetDir != "" {
 		setAssetDir(assetDir)
 	}
 	coreConfig, err := decodeCoreConfig(hardened)
+	assetMu.Unlock()
 	if err != nil {
 		return 0, err
 	}

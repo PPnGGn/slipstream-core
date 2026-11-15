@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -81,27 +80,6 @@ func TestLoadingTunesGC(t *testing.T) {
 	}
 }
 
-// tunFdLike returns a descriptor the test owns, standing in for the one the
-// app hands to Start after detachFd(): from that call on, Start owns it.
-func tunFdLike(t *testing.T) int {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	t.Cleanup(func() { r.Close(); w.Close() })
-	fd, err := syscall.Dup(int(r.Fd()))
-	if err != nil {
-		t.Fatalf("dup: %v", err)
-	}
-	return fd
-}
-
-func fdOpen(fd int) bool {
-	var st syscall.Stat_t
-	return syscall.Fstat(fd, &st) == nil
-}
-
 // A failed Start must not leave the TUN descriptor open. The app has already
 // detached it from its ParcelFileDescriptor, so nobody else will close it, and
 // with the descriptor open the VPN interface stays up with nothing reading
@@ -118,7 +96,7 @@ func TestStartClosesTunFdOnFailure(t *testing.T) {
 				t.Fatal("Start() succeeded with a broken config")
 			}
 			if fdOpen(fd) {
-				syscall.Close(fd)
+				closeFd(fd)
 				t.Errorf("descriptor %d is still open after a failed Start", fd)
 			}
 		})

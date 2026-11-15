@@ -199,7 +199,21 @@ func TestHardenConfigInvalidInput(t *testing.T) {
 }
 
 func TestHardenConfigBuilds(t *testing.T) {
-	for _, socket := range []string{"", "/tmp/slipstream-test.sock"} {
+	t.Run("no socket", func(t *testing.T) {
+		p, err := newProxyParams("")
+		if err != nil {
+			t.Fatalf("newProxyParams: %v", err)
+		}
+		out, err := hardenConfig(hardenSample, p, false)
+		if err != nil {
+			t.Fatalf("hardenConfig: %v", err)
+		}
+		if _, err := buildCoreConfig(out, ""); err != nil {
+			t.Fatalf("buildCoreConfig rejected the hardened config: %v", err)
+		}
+	})
+	t.Run("with socket", func(t *testing.T) {
+		socket := shortSocketPath(t)
 		p, err := newProxyParams(socket)
 		if err != nil {
 			t.Fatalf("newProxyParams: %v", err)
@@ -208,11 +222,10 @@ func TestHardenConfigBuilds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("hardenConfig: %v", err)
 		}
-		// xray itself must accept the result (no geo refs, so no asset dir needed).
 		if _, err := buildCoreConfig(out, ""); err != nil {
 			t.Fatalf("socket %q: buildCoreConfig rejected the hardened config: %v", socket, err)
 		}
-	}
+	})
 }
 
 func TestLiveProxy(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -97,18 +96,6 @@ func TestTheHTTPProxyOpensNoTCPListener(t *testing.T) {
 	sock := shortSocketPath(t)
 	t.Cleanup(func() { _ = stopXray() })
 	assertStartOpensNoTCPListener(t, func() error { return startXray(hardenSample, "", sock) })
-}
-
-// shortSocketPath returns a socket path short enough for sockaddr_un (104 bytes
-// on macOS), which t.TempDir() often is not.
-func shortSocketPath(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ss")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	return filepath.Join(dir, "h.sock")
 }
 
 const freedomConfig = `{"outbounds": [{"protocol": "freedom", "tag": "direct"}]}`

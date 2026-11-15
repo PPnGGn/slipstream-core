@@ -114,6 +114,16 @@ func deleteKey(m map[string]any, name string) {
 	}
 }
 
+// hasKey reports whether m has a key equal to name, ignoring case.
+func hasKey(m map[string]any, name string) bool {
+	for key := range m {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // dropOutboundReverse removes "reverse" from the settings of every outbound.
 //
 // Since xray 26 the reverse proxy lives in the VLESS outbound ("settings":
@@ -130,6 +140,83 @@ func deleteKey(m map[string]any, name string) {
 func dropOutboundReverse(cfg map[string]any) {
 	forEachObject(cfg, []string{"outbounds", "[]", "settings"}, func(settings map[string]any) {
 		deleteKey(settings, "reverse")
+	})
+}
+
+// dropOutboundRedirect removes "redirect" from the settings of every outbound.
+//
+// A freedom outbound ("direct") with "redirect" set overrides the destination
+// of every connection routed to it, silently sending bypassed traffic (LAN
+// bypass, geo bypass, custom direct rules) to an address chosen by the
+// provider — including 127.0.0.1 or the user's LAN — instead of the real
+// destination. No other outbound protocol the client uses has a "redirect"
+// setting.
+func dropOutboundRedirect(cfg map[string]any) {
+	forEachObject(cfg, []string{"outbounds", "[]", "settings"}, func(settings map[string]any) {
+		deleteKey(settings, "redirect")
+	})
+}
+
+// dropTLSFilePaths removes local file paths from tlsSettings and
+// realitySettings of every outbound: masterKeyLog (which makes xray open and
+// append TLS session keys to a file of the provider's choice) and
+// certificateFile / keyFile inside tlsSettings.certificates (which make xray
+// read files from the phone's disk at Build time). Certificate entries left
+// without an inline "certificate" are dropped so xray does not fail on the
+// emptied entry.
+func dropTLSFilePaths(cfg map[string]any) {
+	for _, sec := range []string{"tlsSettings", "realitySettings"} {
+		forEachObject(cfg, []string{"outbounds", "[]", "streamSettings", sec}, func(s map[string]any) {
+			deleteKey(s, "masterKeyLog")
+		})
+	}
+	forEachObject(cfg, []string{"outbounds", "[]", "streamSettings", "tlsSettings"}, func(tls map[string]any) {
+		for key, raw := range tls {
+			if !strings.EqualFold(key, "certificates") {
+				continue
+			}
+			certs, ok := raw.([]any)
+			if !ok {
+				continue
+			}
+			kept := make([]any, 0, len(certs))
+			for _, item := range certs {
+				cert, ok := item.(map[string]any)
+				if !ok {
+					kept = append(kept, item)
+					continue
+				}
+				deleteKey(cert, "certificateFile")
+				deleteKey(cert, "keyFile")
+				if hasKey(cert, "certificate") {
+					kept = append(kept, cert)
+				}
+			}
+			tls[key] = kept
+		}
+	})
+}
+
+// dropOutboundSocketOverrides removes low-level socket and local-interface
+// bindings from every outbound:
+//   - sendThrough: binds the outbound dialer to a local IP or Unix socket path;
+//   - streamSettings.dsSettings: Unix domain socket transport on the phone;
+//   - streamSettings.sockopt.{interface,mark,tproxy,customSockopt,bindAddress,bindPort}:
+//     binds to a specific network interface, sets SO_MARK/tproxy, or invokes
+//     arbitrary setsockopt syscalls.
+//
+// sockopt.dialerProxy is preserved so provider configs can chain outbounds.
+func dropOutboundSocketOverrides(cfg map[string]any) {
+	forEachObject(cfg, []string{"outbounds", "[]"}, func(outbound map[string]any) {
+		deleteKey(outbound, "sendThrough")
+	})
+	forEachObject(cfg, []string{"outbounds", "[]", "streamSettings"}, func(stream map[string]any) {
+		deleteKey(stream, "dsSettings")
+	})
+	forEachObject(cfg, []string{"outbounds", "[]", "streamSettings", "sockopt"}, func(sockopt map[string]any) {
+		for _, field := range []string{"interface", "mark", "tproxy", "customSockopt", "bindAddress", "bindPort"} {
+			deleteKey(sockopt, field)
+		}
 	})
 }
 

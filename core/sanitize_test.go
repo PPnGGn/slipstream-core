@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	M "github.com/xjasonlyu/tun2socks/v2/metadata"
 	"github.com/xtls/xray-core/app/proxyman"
 	xcore "github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/proxy/vless"
@@ -398,6 +400,202 @@ func TestHardenConfigDropsVlessReverse(t *testing.T) {
 				t.Errorf("hardened config has %d outbounds, want 2: the outbound itself must stay", len(built.Outbound))
 			}
 		})
+	}
+}
+
+// A freedom outbound ("direct") with "redirect" in its settings silently sends
+// every bypassed connection (LAN bypass, geo bypass, custom direct rules) to
+// the redirect address instead of its real destination, reaching localhost or
+// any host the provider chooses.
+func TestHardenConfigDropsFreedomRedirect(t *testing.T) {
+	realTarget := echoTCP(t)
+	trap, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { trap.Close() })
+	go func() {
+		for {
+			c, err := trap.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_, _ = c.Write([]byte("trap"))
+			}()
+		}
+	}()
+	trapAddr := trap.Addr().String()
+
+	const sample = `{
+		"outbounds": [
+			{"protocol": "freedom", "tag": "direct",
+			 "settings": {"domainStrategy": "UseIP", %q: %q}}
+		]
+	}`
+	p := proxyParams{}
+
+	for _, key := range []string{"redirect", "REDIRECT", "Redirect"} {
+		t.Run(key, func(t *testing.T) {
+			cfg := fmt.Sprintf(sample, key, trapAddr)
+
+			// Without hardening, dialing realTarget is redirected to trapAddr.
+			plainPx := startBridgeConfig(t, cfg)
+			conn, err := plainPx.DialContext(t.Context(), metadata(M.TCP, realTarget))
+			if err != nil {
+				t.Fatalf("plain DialContext: %v", err)
+			}
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			got := make([]byte, 4)
+			_, err = io.ReadFull(conn, got)
+			conn.Close()
+			if err != nil || string(got) != "trap" {
+				t.Fatalf("unhardened freedom answered %q (%v), want trap: the test would prove nothing", got, err)
+			}
+
+			// After hardening, dialing realTarget reaches realTarget and echoes back.
+			hardened, err := hardenConfig(cfg, p, false)
+			if err != nil {
+				t.Fatalf("hardenConfig: %v", err)
+			}
+			safePx := startBridgeConfig(t, hardened)
+			conn, err = safePx.DialContext(t.Context(), metadata(M.TCP, realTarget))
+			if err != nil {
+				t.Fatalf("hardened DialContext: %v", err)
+			}
+			defer conn.Close()
+			if _, err := conn.Write([]byte("ping")); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if _, err := io.ReadFull(conn, got); err != nil || string(got) != "ping" {
+				t.Errorf("hardened freedom answered %q (%v), want ping from realTarget", got, err)
+			}
+		})
+	}
+}
+
+// tlsSettings.certificates[].certificateFile / keyFile make xray read files
+// from the phone's disk at Build() time, and masterKeyLog in tlsSettings or
+// realitySettings makes xray open a file for writing TLS secrets.
+func TestHardenConfigDropsTLSFilePaths(t *testing.T) {
+	missingCert := filepath.Join(t.TempDir(), "missing-cert.pem")
+	missingKey := filepath.Join(t.TempDir(), "missing-key.pem")
+	keyLog := filepath.Join(t.TempDir(), "keylog.txt")
+
+	const sample = `{
+		"outbounds": [
+			{"protocol": "vless", "tag": "proxy",
+			 "settings": {"vnext": [{"address": "1.2.3.4", "port": 443, "users": [{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}]}]},
+			 "streamSettings": {"network": "tcp", "security": "tls",
+			   "tlsSettings": {
+			     "serverName": "example.com",
+			     %q: %q,
+			     "certificates": [{%q: %q, %q: %q}]
+			   }}}
+		]
+	}`
+
+	for _, certKey := range []string{"certificateFile", "CERTIFICATEFILE", "Certificatefile"} {
+		t.Run(certKey, func(t *testing.T) {
+			cfg := fmt.Sprintf(sample, "masterKeyLog", keyLog, certKey, missingCert, "keyFile", missingKey)
+
+			// Without hardening, buildCoreConfig tries to read missingCert from disk and fails.
+			if _, err := buildCoreConfig(cfg, ""); err == nil {
+				t.Fatal("unhardened buildCoreConfig succeeded with a missing certificateFile: the test would prove nothing")
+			}
+
+			// After hardening, the file paths and emptied cert entry are gone, so xray starts cleanly.
+			startHardened(t, cfg)
+
+			if _, err := os.Stat(keyLog); err == nil {
+				t.Errorf("masterKeyLog %s was created on disk", keyLog)
+			}
+		})
+	}
+}
+
+// Outbound sendThrough and streamSettings.sockopt interface/mark/bind/tproxy
+// let a provider bind sockets to specific network interfaces or local addresses,
+// while sockopt.dialerProxy is legitimate server chaining and must stay.
+func TestHardenConfigDropsOutboundSocketOverrides(t *testing.T) {
+	const cfg = `{
+		"outbounds": [
+			{"protocol": "freedom", "tag": "proxy",
+			 "SENDTHROUGH": "127.0.0.1",
+			 "streamSettings": {
+			   "dsSettings": {"path": "/tmp/evil.sock"},
+			   "sockopt": {
+			     "INTERFACE": "wlan0",
+			     "MARK": 42,
+			     "bindAddress": "127.0.0.1",
+			     "bindPort": 12345,
+			     "tproxy": "tproxy",
+			     "customSockopt": [{"level": "1", "opt": "2", "value": "1", "type": "int"}],
+			     "dialerProxy": "hop"
+			   }
+			 }},
+			{"protocol": "freedom", "tag": "hop"}
+		]
+	}`
+
+	plain, err := buildCoreConfig(cfg, "")
+	if err != nil {
+		t.Fatalf("buildCoreConfig(plain): %v", err)
+	}
+	msg, err := plain.Outbound[0].SenderSettings.GetInstance()
+	if err != nil {
+		t.Fatalf("SenderSettings: %v", err)
+	}
+	plainSender := msg.(*proxyman.SenderConfig)
+	if plainSender.Via == nil || plainSender.StreamSettings.SocketSettings.Interface != "wlan0" || plainSender.StreamSettings.SocketSettings.Mark != 42 {
+		t.Fatalf("plain sender = %+v: test config did not set Via/Interface/Mark", plainSender)
+	}
+
+	hardened, err := hardenConfig(cfg, proxyParams{}, false)
+	if err != nil {
+		t.Fatalf("hardenConfig: %v", err)
+	}
+	built, err := buildCoreConfig(hardened, "")
+	if err != nil {
+		t.Fatalf("buildCoreConfig(hardened): %v", err)
+	}
+	msg, err = built.Outbound[0].SenderSettings.GetInstance()
+	if err != nil {
+		t.Fatalf("SenderSettings(hardened): %v", err)
+	}
+	safeSender := msg.(*proxyman.SenderConfig)
+	if safeSender.Via != nil {
+		t.Errorf("sendThrough survived hardening: Via = %v", safeSender.Via)
+	}
+	sock := safeSender.StreamSettings.SocketSettings
+	if sock.Interface != "" || sock.Mark != 0 || len(sock.CustomSockopt) != 0 {
+		t.Errorf("dangerous sockopt survived hardening: %+v", sock)
+	}
+
+	// Also verify JSON keys (dsSettings, bindAddress, bindPort, tproxy) were removed,
+	// while dialerProxy survived.
+	var decoded struct {
+		Outbounds []struct {
+			StreamSettings map[string]any `json:"streamSettings"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(hardened), &decoded); err != nil {
+		t.Fatalf("decode hardened: %v", err)
+	}
+	ss := decoded.Outbounds[0].StreamSettings
+	if _, hasDS := ss["dsSettings"]; hasDS {
+		t.Errorf("dsSettings survived hardening: %v", ss)
+	}
+	sockMap, _ := ss["sockopt"].(map[string]any)
+	for _, forbidden := range []string{"bindAddress", "bindPort", "tproxy", "INTERFACE", "MARK", "customSockopt"} {
+		if _, ok := sockMap[forbidden]; ok {
+			t.Errorf("sockopt[%q] survived hardening: %v", forbidden, sockMap)
+		}
+	}
+	if sockMap["dialerProxy"] != "hop" {
+		t.Errorf("sockopt[\"dialerProxy\"] = %v, want \"hop\"", sockMap["dialerProxy"])
 	}
 }
 

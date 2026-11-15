@@ -115,9 +115,13 @@ func hasOutboundTag(c *core.Config, tag string) bool {
 	return false
 }
 
-// assetEnvSet is true while the asset variables hold a directory this package
-// put there.
-var assetEnvSet atomic.Bool
+// assetMu serializes changes to the process-global XRAY_LOCATION_ASSET
+// variables across startXray and MeasureDelay so that os.Setenv and the
+// os.Getenv calls inside pbConfig.Build() never race.
+var (
+	assetMu     sync.Mutex
+	assetEnvSet atomic.Bool
+)
 
 // setAssetDir exports assetDir for xray, or, when it is empty, takes back what
 // an earlier session exported so that this one gets xray's default instead of
@@ -143,6 +147,8 @@ func setAssetDir(assetDir string) {
 // Build() time — a config that names a geosite:/geoip: category with no data
 // file present fails at this step, before anything starts.
 func buildCoreConfig(configJson string, assetDir string) (*core.Config, error) {
+	assetMu.Lock()
+	defer assetMu.Unlock()
 	setAssetDir(assetDir)
 	return decodeCoreConfig(configJson)
 }
