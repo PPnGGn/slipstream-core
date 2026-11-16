@@ -100,18 +100,18 @@ vet:
 tidy:
 	go mod tidy
 
-# The trimmed geosite.dat / geoip.dat that slipstream-rules publishes are only
+# The trimmed geosite.dat / geoip.dat that slipstream-georules publishes are only
 # guaranteed to load in the xray-core version *this* module builds against.
-# If the two go.mod files drift, slipstream-rules' geocheck still passes (it
+# If the two go.mod files drift, slipstream-georules' geocheck still passes (it
 # validates against its own pin) while the app hits a parse error at connect
 # time. This asserts the pins match; run it in CI / before a release.
-# Expects the slipstream-rules repo checked out next to this one; the local
-# folder is named slipstream-georules, override with RULES_DIR=... if yours differs.
+# Expects the slipstream-georules repo checked out next to this one; override
+# with RULES_DIR=... if yours lives elsewhere.
 RULES_DIR ?= ../slipstream-georules
 check-xray-pin:
 	@if [ ! -f "$(RULES_DIR)/go.mod" ]; then \
 		echo "check-xray-pin: no go.mod in RULES_DIR=$(RULES_DIR)"; \
-		echo "check out slipstream-rules next to this repo or pass RULES_DIR=<path>"; exit 1; \
+		echo "check out slipstream-georules next to this repo or pass RULES_DIR=<path>"; exit 1; \
 	fi
 	@here=$$(grep -E '^\s+github.com/xtls/xray-core ' go.mod | awk '{print $$2}'); \
 	there=$$(grep -E '^\s+github.com/xtls/xray-core ' $(RULES_DIR)/go.mod | awk '{print $$2}'); \
@@ -120,8 +120,8 @@ check-xray-pin:
 	fi; \
 	if [ "$$here" != "$$there" ]; then \
 		echo "check-xray-pin: MISMATCH"; \
-		echo "  slipstream-core : $$here"; \
-		echo "  slipstream-rules: $$there"; \
+		echo "  slipstream-core    : $$here"; \
+		echo "  slipstream-georules: $$there"; \
 		echo "bump both, or the trimmed .dat may not parse in the app."; exit 1; \
 	fi; \
 	echo "check-xray-pin: ok ($$here)"
